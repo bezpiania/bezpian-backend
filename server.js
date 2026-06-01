@@ -17,6 +17,7 @@ import ConversationRoutes from './routes/conversations/conversationRoutes.js';
 import DocumentRoutes from './routes/documents/documentRoutes.js';
 import LeadRoutes from './routes/leads/leadRoutes.js';
 import AppointmentRoutes from './routes/appointments/appointmentRoutes.js';
+import ResourceRoutes from './routes/resources/resourceRoutes.js';
 import QuoteRoutes from './routes/quotes/quoteRoutes.js';
 import BillingRoutes from './routes/billing/billingRoutes.js';
 import EmbedRoutes from './routes/embed/embedRoutes.js';
@@ -63,6 +64,7 @@ app.use('/api/embed', EmbedRoutes);
 app.use('/api/webhooks', WebhookRoutes);
 app.use('/api/messaging', SocialRoutes);
 app.use('/api/calendar', CalendarRoutes);
+app.use('/api/quotes', QuoteRoutes);
 
 // Protected routes (con autenticación)
 app.use('/api/workspaces', authMiddleware, WorkspaceRoutes);
@@ -70,6 +72,9 @@ app.use('/api/workspaces', authMiddleware, WorkspaceRoutes);
 // Nested routes under workspaces
 // These are mounted in workspaceRoutes.js to keep the structure modular
 // e.g., /api/workspaces/:workspaceId/chatbots
+
+// Resource routes nested under chatbots
+app.use('/api/workspaces/:workspaceId/chatbots/:chatbotId/resources', authMiddleware, ResourceRoutes);
 
 // Legacy direct routes (para compatibilidad)
 app.use('/api/conversations', authMiddleware, ConversationRoutes);

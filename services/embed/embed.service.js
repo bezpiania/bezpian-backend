@@ -4,6 +4,7 @@ import Message from '../../models/Message.js';
 import Appointment from '../../models/Appointment.js';
 import Lead from '../../models/Lead.js';
 import Quote from '../../models/Quote.js';
+import CompanyInfo from '../../models/CompanyInfo.js';
 import openaiService from '../openai/openai.service.js';
 import AdvancedRAGService from '../rag/advanced-rag.service.js';
 import chatbotConfigService from '../config/chatbot-config.service.js';
@@ -122,38 +123,106 @@ export default class EmbedService {
                 createdAt: new Date()
             });
 
-            // 4. Búsqueda semántica de documentos
+            // 3.5. Procesar automáticamente para detectar y guardar leads
+            const LeadServiceClass = (await import('./../../services/leads/lead.service.js')).default;
+            const leadService = new LeadServiceClass();
+            const leadProcessResult = await leadService.processMessageForLead(
+                conversationId,
+                content,
+                chatbot._id,
+                chatbot.workspaceId
+            );
+            if (leadProcessResult.leadDetected) {
+                logger.info('✅ Lead detectado y guardado automáticamente', {
+                    conversationId,
+                    leadId: leadProcessResult.leadId,
+                    leadInfo: leadProcessResult.leadInfo
+                });
+            }
+
+            // 4. Obtener información adicional de empresa
+            const companyInfo = await CompanyInfo.findOne({ workspaceId: chatbot.workspaceId });
+
+            // 5. Búsqueda semántica de documentos
             const ragStartTime = Date.now();
             const ragChunks = await advancedRag.searchDocumentsBySemantics(
                 chatbot._id,
                 content,
-                5
+                5,
+                chatbot.openaiApiKey
             );
             const ragDuration = Date.now() - ragStartTime;
             logger.performance('RAG Search', ragDuration, { chunks: ragChunks.length });
 
-            // 5. Búsqueda de productos
-            const products = await advancedRag.searchProducts(chatbot._id, content, 5);
+            // 6. Búsqueda de productos (primero intentar búsqueda de regalos)
+            let products = [];
+            const giftSearchResult = await advancedRag.searchGiftProducts(chatbot._id, content, 5);
 
-            // 6. Construir contexto optimizado
-            const contextText = advancedRag.buildContext(
+            if (giftSearchResult.isGift && giftSearchResult.products.length > 0) {
+                // Es una pregunta de regalo y hay productos disponibles
+                products = giftSearchResult.products;
+                console.log('🎁 [GIFT-SEARCH] Using gift products:', products.map(p => p.name));
+            } else {
+                // Búsqueda normal de productos
+                products = await advancedRag.searchProducts(chatbot._id, content, 5, chatbot.openaiApiKey);
+            }
+
+            console.log('🔍 [DEBUG] Búsqueda de productos:', {
+                query: content,
+                productsFound: products.length,
+                products: products.map(p => ({ name: p.name, stock: p.stock, similarity: p.similarity }))
+            });
+
+            // 6.5. Detectar solicitud de cotización (pero NO generar automáticamente)
+            const QuoteGeneratorService = (await import('./../../services/quotes/quote-generator.service.js')).default;
+            let quoteData = null;
+            let shouldAskForQuote = false;
+
+            if (QuoteGeneratorService.isQuoteRequest(content)) {
+                // Usuario pidió cotización - pero NO generamos automáticamente
+                // Solo marcamos que deberíamos preguntar
+                shouldAskForQuote = true;
+                logger.info('User requested a quote but we will ask for confirmation', {
+                    conversationId,
+                    productsFound: products.length
+                });
+            }
+
+            // 7. Construir contexto optimizado (incluye additionalInfo)
+            let contextText = advancedRag.buildContext(
                 ragChunks,
                 products,
                 chatbot.personality?.customPrompt
             );
 
-            // 7. Validar token count
+            console.log('📄 [DEBUG] Contexto construido:', {
+                contextLength: contextText.length,
+                hasProducts: contextText.includes('CATÁLOGO DE PRODUCTOS'),
+                firstProducts: contextText.substring(0, 500)
+            });
+
+            // Agregar información adicional si existe
+            if (companyInfo?.additionalInfo && companyInfo.additionalInfo.length > 0) {
+                contextText += '\n\n📋 INFORMACIÓN ADICIONAL DEL ADMINISTRADOR:\n';
+                for (const qa of companyInfo.additionalInfo) {
+                    if (qa.question && qa.answer) {
+                        contextText += `- P: ${qa.question}\n  R: ${qa.answer}\n`;
+                    }
+                }
+            }
+
+            // 8. Validar token count
             const isValidTokenCount = advancedRag.validateTokenCount(contextText);
             if (!isValidTokenCount) {
                 logger.warn('Context exceeds token limit', { botId, contextLength: contextText.length });
             }
 
-            // 8. Obtener historial (últimos 6 mensajes para no exceder contexto)
+            // 9. Obtener historial (últimos 6 mensajes para no exceder contexto)
             const history = await Message.find({
                 conversationId: conversation._id
             }).limit(6).sort({ createdAt: -1 }).lean();
 
-            // 9. Construir system prompt Rico (con datos de empresa integrados)
+            // 10. Construir system prompt rico (con datos de empresa integrados)
             let systemPrompt = await chatbotConfigService.buildSystemPrompt(
                 chatbot.workspaceId,
                 chatbot._id
@@ -179,7 +248,7 @@ export default class EmbedService {
                 }
             ];
 
-            // 10. Llamar OpenAI
+            // 11. Llamar OpenAI
             const openaiStartTime = Date.now();
             const response = await openaiService.generateResponse(
                 chatbot,
@@ -277,13 +346,48 @@ export default class EmbedService {
                 }
             }
 
+            // 15. Cotización automática deshabilitada (requiere confirmación del usuario)
+            // const autoQuote = await this.tryAutoGenerateQuote(
+            //     conversationId,
+            //     content,
+            //     response.content
+            // );
+            const autoQuote = null;
+
+            // Si se generó una cotización, agregar mensaje especial en la conversación
+            if (autoQuote) {
+                await Message.create({
+                    conversationId: conversation._id,
+                    chatbotId: chatbot._id,
+                    role: 'system',
+                    messageType: 'quote_generated',
+                    content: `✅ Cotización #${autoQuote.quoteNumber} generada y enviada por email\n💰 Total: $${autoQuote.total?.toLocaleString('es-CL')} CLP`,
+                    metadata: {
+                        quoteId: autoQuote._id,
+                        quoteNumber: autoQuote.quoteNumber,
+                        autoGenerated: true
+                    },
+                    createdAt: new Date()
+                });
+
+                // Actualizar estado de la conversación
+                await Conversation.updateOne(
+                    { _id: conversationId },
+                    {
+                        $push: { quotes: autoQuote._id },
+                        outcome: 'quote'
+                    }
+                );
+            }
+
             const totalDuration = Date.now() - startTime;
             logger.info('Message processed successfully', {
                 botId,
                 conversationId,
                 contentLength: content.length,
                 totalDurationMs: totalDuration,
-                ragChunksUsed: ragChunks.length
+                ragChunksUsed: ragChunks.length,
+                autoQuoteGenerated: !!autoQuote
             });
 
             const responseData = {
@@ -298,9 +402,28 @@ export default class EmbedService {
                     tokensUsed: response.tokensIn + response.tokensOut,
                     cost: response.cost,
                     latencyMs: totalDuration,
-                    ragChunksUsed: ragChunks.length
+                    ragChunksUsed: ragChunks.length,
+                    autoQuoteGenerated: !!autoQuote
                 }
             };
+
+            // Agregar información de cotización si se generó
+            if (quoteData) {
+                responseData.quote = {
+                    _id: quoteData._id,
+                    quoteNumber: quoteData.quoteNumber,
+                    total: quoteData.total,
+                    itemsCount: quoteData.items?.length || 0,
+                    status: quoteData.status,
+                    shareToken: quoteData.shareToken
+                };
+
+                // Agregar mensaje de cotización a la respuesta del bot
+                const quoteMessage = QuoteGeneratorService.getQuoteResponseMessage(quoteData);
+                if (quoteMessage) {
+                    responseData.data.botMessage.content += `\n\n${quoteMessage}`;
+                }
+            }
 
             if (whatsappWarning) {
                 responseData.warning = whatsappWarning.warning;
@@ -457,12 +580,27 @@ export default class EmbedService {
 
             const chatbot = await Chatbot.findById(conversation.chatbotId);
 
+            // Auto-assign resource if resources exist
+            let resourceId = null;
+            const { findBestResource } = await import('../appointments/resourceAvailability.service.js');
+            if (appointmentData.date && appointmentData.time) {
+                const best = await findBestResource(
+                    conversation.chatbotId.toString(),
+                    appointmentData.date,
+                    appointmentData.time,
+                    parseInt(appointmentData.guestCount) || 1
+                );
+                if (best) resourceId = best.id;
+            }
+
             const appointment = new Appointment({
                 chatbotId: conversation.chatbotId,
                 workspaceId: conversation.workspaceId,
                 conversationId,
+                resourceId,
+                guestCount: appointmentData.guestCount || 1,
                 scheduledAt: appointmentData.scheduledAt,
-                durationMinutes: appointmentData.durationMinutes || 30,
+                durationMinutes: appointmentData.durationMinutes || 60,
                 reason: appointmentData.reason,
                 customerName: appointmentData.customerName,
                 customerEmail: appointmentData.customerEmail,
@@ -582,6 +720,125 @@ export default class EmbedService {
         } catch (error) {
             console.error('❌ EmbedService.searchProducts:', error);
             return { success: false, message: error.message };
+        }
+    };
+
+    /**
+     * Detectar email y datos de cotización en mensaje
+     * (Flujo humanizado: bot pide datos conversacionalmente, sistema los captura)
+     */
+    tryAutoGenerateQuote = async (conversationId, userMessage, botResponse) => {
+        try {
+            const conversation = await Conversation.findById(conversationId);
+            if (!conversation) return null;
+
+            const chatbot = await Chatbot.findById(conversation.chatbotId);
+            if (!chatbot) return null;
+
+            // 1. Verificar si hay contexto de cotización (cantidad + precio)
+            const recentMessages = await Message.find({ conversationId })
+                .sort({ createdAt: -1 })
+                .limit(15)
+                .lean();
+
+            const conversationText = recentMessages.map(m => m.content).join(' ').toLowerCase();
+
+            // Detectar cantidad mencionada
+            const numberRegex = /(\d+)\s*(unidades?|unid|u|cantidad|botella|botellas|pack|packs|litro|litros|ml|kg|gramos)/gi;
+            const quantityMatch = conversationText.match(numberRegex);
+
+            // Detectar precio mencionado
+            const botMessages = recentMessages.filter(m => m.role === 'assistant');
+            const conversationWithBotMessages = botMessages.map(m => m.content).join(' ');
+            const priceRegex = /\$?\s*(\d{1,3}(?:\.\d{3})*(?:,\d{2})?)/g;
+            const prices = conversationWithBotMessages.match(priceRegex);
+
+            // Si no hay cantidad y precio, no hay intención de cotización
+            if (!quantityMatch || !prices) {
+                return null;
+            }
+
+            // 2. Extraer datos configurados (email, nombre, teléfono, etc.)
+            const quoteFields = chatbot.quoteFields || [];
+            const capturedData = {};
+            let allRequiredFieldsPresent = true;
+
+            // Patrones de extracción para campos comunes
+            const patterns = {
+                email: /([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/gi,
+                phone: /(\+?[\d\s\-\(\)]{8,})/g,
+                name: null // Se extrae del contexto después
+            };
+
+            // Extraer datos según quoteFields
+            for (const field of quoteFields.sort((a, b) => a.order - b.order)) {
+                let value = null;
+
+                if (field.fieldId === 'email' || field.label.toLowerCase().includes('email')) {
+                    const emailMatches = conversationText.match(patterns.email);
+                    value = emailMatches ? emailMatches[emailMatches.length - 1] : null;
+                } else if (field.fieldId === 'phone' || field.label.toLowerCase().includes('teléfono') || field.label.toLowerCase().includes('telefono')) {
+                    const phoneMatches = conversationText.match(patterns.phone);
+                    value = phoneMatches ? phoneMatches[phoneMatches.length - 1] : null;
+                } else if (field.fieldId === 'name' || field.label.toLowerCase().includes('nombre')) {
+                    // Intentar extraer nombre (palabras capitalizadas o después de ciertos patrones)
+                    const nameMatch = conversationText.match(/(?:soy|me llamo|mi nombre es)\s+([A-ZÁ][a-záéíóúü]+(?:\s+[A-ZÁ][a-záéíóúü]+)?)/i);
+                    if (nameMatch) {
+                        value = nameMatch[1];
+                    }
+                }
+
+                capturedData[field.fieldId] = value;
+
+                // Verificar si campo requerido falta
+                if (field.required && !value) {
+                    allRequiredFieldsPresent = false;
+                }
+            }
+
+            // 3. Si faltan campos requeridos, no generar cotización aún
+            // (el bot debe pedirlos conversacionalmente)
+            if (!allRequiredFieldsPresent) {
+                console.log(`⚠️ [AUTO-QUOTE] Faltan campos requeridos:`, {
+                    capturedData,
+                    missing: quoteFields
+                        .filter(f => f.required && !capturedData[f.fieldId])
+                        .map(f => f.label)
+                });
+                return null;
+            }
+
+            // 4. Todos los datos están presentes → generar cotización
+            console.log(`✅ [AUTO-QUOTE] Todos los datos capturados:`, capturedData);
+
+            const quantity = parseInt(quantityMatch[quantityMatch.length - 1]);
+            const priceMatch = prices[prices.length - 1]?.replace(/\$|,/g, '');
+            const unitPrice = parseInt(priceMatch);
+            const total = unitPrice * quantity;
+
+            const quoteResult = await this.requestQuote(conversationId, {
+                items: [{
+                    description: 'Productos solicitados',
+                    quantity: quantity,
+                    unitPrice: unitPrice,
+                    total: total
+                }],
+                subtotal: total,
+                tax: 0,
+                total: total,
+                currency: 'CLP',
+                customerData: capturedData
+            });
+
+            if (quoteResult.success) {
+                console.log(`✅ [AUTO-QUOTE] Cotización generada: ${quoteResult.data.quote.quoteNumber}`);
+                return quoteResult.data.quote;
+            }
+
+            return null;
+        } catch (error) {
+            console.warn('⚠️ Auto-quote generation failed:', error.message);
+            return null;
         }
     };
 }

@@ -83,30 +83,55 @@ export default class EmbedController {
 
     getAvailability = async (req, res) => {
         try {
-            const { embedKey, days } = req.query;
+            const { embedKey, date, guestCount } = req.query;
 
             const Chatbot = (await import('../../models/Chatbot.js')).default;
             const chatbot = await Chatbot.findOne({ embedKey });
 
             if (!chatbot) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Chatbot no encontrado'
-                });
+                return res.status(404).json({ success: false, message: 'Chatbot no encontrado' });
             }
 
-            const response = await embedService.getAvailability(
-                chatbot._id,
-                chatbot.workspaceId,
-                parseInt(days) || 7
+            // New resource-based availability
+            const { getAvailableSlotsForDate } = await import('../../services/appointments/resourceAvailability.service.js');
+            const slots = await getAvailableSlotsForDate(
+                chatbot._id.toString(),
+                date,
+                parseInt(guestCount) || 1
             );
-            return res.status(response.success ? 200 : 400).json(response);
+
+            return res.status(200).json({ success: true, data: { date, slots } });
         } catch (error) {
             console.error('❌ EmbedController.getAvailability:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Error al obtener disponibilidad'
-            });
+            return res.status(500).json({ success: false, message: 'Error al obtener disponibilidad' });
+        }
+    };
+
+    getAvailableDates = async (req, res) => {
+        try {
+            const { embedKey, guestCount, daysAhead } = req.query;
+
+            const Chatbot = (await import('../../models/Chatbot.js')).default;
+            const chatbot = await Chatbot.findOne({ embedKey });
+            if (!chatbot) return res.status(404).json({ success: false, message: 'Chatbot no encontrado' });
+
+            const { getAvailableSlotsForDate } = await import('../../services/appointments/resourceAvailability.service.js');
+            const days = parseInt(daysAhead) || 14;
+            const guests = parseInt(guestCount) || 1;
+            const availableDates = [];
+
+            for (let i = 0; i < days; i++) {
+                const d = new Date();
+                d.setUTCDate(d.getUTCDate() + i);
+                const dateStr = d.toISOString().split('T')[0];
+                const slots = await getAvailableSlotsForDate(chatbot._id.toString(), dateStr, guests);
+                if (slots.length > 0) availableDates.push(dateStr);
+            }
+
+            return res.status(200).json({ success: true, data: { availableDates } });
+        } catch (error) {
+            console.error('❌ EmbedController.getAvailableDates:', error);
+            return res.status(500).json({ success: false, message: 'Error al obtener fechas disponibles' });
         }
     };
 
