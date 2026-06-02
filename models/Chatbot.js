@@ -2,10 +2,11 @@ import mongoose from 'mongoose';
 import { encrypt, decrypt } from '../utils/encryption.js';
 
 const chatbotSchema = new mongoose.Schema({
-  workspaceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Workspace', required: true },
-  name: { type: String, required: true },
-  embedKey: { type: String, required: true, unique: true },
-  status: { type: String, enum: ['draft', 'active', 'paused'], default: 'draft' },
+  workspaceId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Workspace', required: true },
+  name:         { type: String, required: true },
+  embedKey:     { type: String, required: true, unique: true },
+  status:       { type: String, enum: ['draft', 'active', 'paused'], default: 'draft' },
+  businessType: { type: String, enum: ['restaurant', 'store', 'clinic', 'generic'], default: 'generic' },
 
   personality: {
     tone: String,
@@ -144,6 +145,8 @@ const chatbotSchema = new mongoose.Schema({
 
   deliveryConfig: {
     enabled:          { type: Boolean, default: false },
+    allowDelivery:    { type: Boolean, default: true },
+    allowPickup:      { type: Boolean, default: true },
     zones:            [{ type: String }],
     deliveryCost:     { type: Number, default: 0 },
     estimatedMinutes: { type: Number, default: 45 },

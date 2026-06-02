@@ -283,13 +283,16 @@ COSTO DE DESPACHO: Bs. ${d.deliveryCost || 0}
 TIEMPO ESTIMADO: ${d.estimatedMinutes || 45} minutos
 ${d.minimumOrder > 0 ? `PEDIDO MÍNIMO: Bs. ${d.minimumOrder}` : ''}
 
+MODALIDADES DISPONIBLES: ${[d.allowDelivery && 'Delivery a domicilio', d.allowPickup && 'Retiro en local'].filter(Boolean).join(' y ')}
+
 FLUJO OBLIGATORIO — sé cálido y conversacional:
-1. Confirma que el cliente quiere delivery y está en zona de despacho
-2. Ayuda al cliente a armar su pedido con los productos disponibles
-3. Confirma el pedido con subtotal + costo de despacho + total
-4. Pide nombre, teléfono y dirección completa
-5. Con todos los datos → llama create_order
-IMPORTANTE: NUNCA confirmes el pedido sin dirección y teléfono del cliente.
+${(d.allowDelivery && d.allowPickup) ? `1. **PRIMERO** pregunta si el pedido es para RETIRO EN LOCAL o DELIVERY A DOMICILIO` : d.allowDelivery ? `1. Solo ofreces DELIVERY A DOMICILIO` : `1. Solo ofreces RETIRO EN LOCAL`}
+${d.allowPickup ? `- Si es RETIRO: no cobres despacho. Pide nombre, teléfono y el local de retiro (Sopocachi o Calacoto)` : ''}
+${d.allowDelivery ? `- Si es DELIVERY: informa costo Bs. ${d.deliveryCost || 0} y tiempo ~${d.estimatedMinutes || 45} min. Pide nombre, teléfono y dirección completa` : ''}
+2. Ayuda a armar el pedido con los productos disponibles
+3. Muestra resumen: subtotal + despacho (si aplica) + total
+4. Con todos los datos → llama create_order
+IMPORTANTE: NUNCA confirmes sin nombre y teléfono del cliente.
 
 EJEMPLOS:
   ✓ "¡Claro que sí! ¿Qué te gustaría pedir? Puedo ayudarte a armar tu pedido 🍲"
