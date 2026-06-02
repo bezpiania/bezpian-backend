@@ -1,7 +1,51 @@
 import { Quote } from '../../models/index.js';
 import crypto from 'crypto';
+import logger from '../../utils/logger.js';
 
-export default class QuoteService {
+class QuoteService {
+    create = async (workspaceId, chatbotId, quoteData) => {
+        try {
+            const { items, customerData, conversationId, leadId } = quoteData;
+
+            if (!items || items.length === 0) {
+                return { success: false, message: 'Items no puede estar vacío' };
+            }
+
+            // Calcular totales
+            let subtotal = 0;
+            items.forEach(item => {
+                const itemSubtotal = item.quantity * item.unitPrice;
+                subtotal += itemSubtotal;
+            });
+
+            // Generar número único
+            const quoteNumber = `QT-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+
+            const quote = await Quote.create({
+                chatbotId,
+                workspaceId,
+                conversationId,
+                leadId,
+                quoteNumber,
+                items,
+                subtotal,
+                tax: 0,
+                total: subtotal,
+                currency: 'CLP',
+                customerData,
+                status: 'draft',
+                shareToken: crypto.randomBytes(16).toString('hex'),
+                expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+            });
+
+            logger.info(`✅ Quote created:`, { quoteId: quote._id, quoteNumber });
+            return { success: true, message: 'Cotización creada', data: quote };
+        } catch (error) {
+            logger.error('❌ QuoteService.create:', error);
+            return { success: false, message: error.message };
+        }
+    };
+
     list = async (workspaceId, filters = {}) => {
         try {
             let query = { workspaceId };
@@ -77,3 +121,5 @@ export default class QuoteService {
         }
     };
 }
+
+export default new QuoteService();

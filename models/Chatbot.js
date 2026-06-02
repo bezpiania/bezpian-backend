@@ -125,6 +125,18 @@ const chatbotSchema = new mongoose.Schema({
     helpText: String
   }],
 
+  appointmentFields: [{
+    _id: false,
+    fieldId: { type: String, required: true },
+    label: { type: String, required: true },
+    fieldType: { type: String, enum: ['text', 'email', 'phone', 'number', 'textarea', 'select'], default: 'text' },
+    required: { type: Boolean, default: false },
+    placeholder: String,
+    options: [String],
+    order: { type: Number, default: 0 },
+    helpText: String,
+  }],
+
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });

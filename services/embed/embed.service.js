@@ -18,6 +18,35 @@ import logger from '../../utils/logger.js';
 const whatsAppInstance = new whatsappService();
 const advancedRag = new AdvancedRAGService();
 
+function buildAppointmentTool(chatbot) {
+    const customFields = chatbot.appointmentFields?.length ? chatbot.appointmentFields : [
+        { fieldId: 'name', label: 'Nombre', required: true },
+        { fieldId: 'phone', label: 'Teléfono', required: true },
+    ];
+
+    const properties = {
+        date: { type: 'string', description: 'Fecha en formato YYYY-MM-DD' },
+        time: { type: 'string', description: 'Hora en formato HH:MM (24h)' },
+        guest_count: { type: 'integer', description: 'Número de personas' },
+    };
+    const required = ['date', 'time', 'guest_count'];
+
+    for (const f of customFields) {
+        const key = f.fieldId;
+        properties[key] = { type: 'string', description: `${f.label}${f.helpText ? ' — ' + f.helpText : ''}` };
+        if (f.required) required.push(key);
+    }
+
+    return {
+        type: 'function',
+        function: {
+            name: 'book_appointment',
+            description: 'Crea una reserva cuando tienes TODOS los datos obligatorios confirmados por el usuario.',
+            parameters: { type: 'object', properties, required },
+        },
+    };
+}
+
 // Limpieza de cache cada 30 minutos
 setInterval(() => {
     advancedRag.cleanupCache();
@@ -44,13 +73,20 @@ export default class EmbedService {
 
             await conversation.save();
 
+            const Resource = (await import('../../models/Resource.js')).default;
+            const hasResources = await Resource.exists({ chatbotId: chatbot._id, isActive: true });
+
             return {
                 success: true,
                 message: 'Conversación iniciada',
                 data: {
                     conversationId: conversation._id,
                     botId: chatbot._id,
-                    welcomeMessage: chatbot.personality?.welcomeMessage || '¡Hola! ¿En qué te puedo ayudar?'
+                    welcomeMessage: chatbot.personality?.welcomeMessage || '¡Hola! ¿En qué te puedo ayudar?',
+                    features: {
+                        appointmentsEnabled: !!(chatbot.integrations?.calendar?.enabled && hasResources),
+                        quotesEnabled: !!(chatbot.quoteFields?.length > 0),
+                    }
                 }
             };
         } catch (error) {
@@ -248,12 +284,18 @@ export default class EmbedService {
                 }
             ];
 
-            // 11. Llamar OpenAI
+            // 11. Llamar OpenAI (con function calling si agendamiento activo)
             const openaiStartTime = Date.now();
+            const calEnabled = chatbot.integrations?.calendar?.enabled;
+            const Resource = (await import('../../models/Resource.js')).default;
+            const activeResources = calEnabled ? await Resource.find({ chatbotId: chatbot._id, isActive: true }) : [];
+            const appointmentTools = activeResources.length > 0 ? [buildAppointmentTool(chatbot)] : [];
+
             const response = await openaiService.generateResponse(
                 chatbot,
                 content,
-                messages
+                messages,
+                appointmentTools.length ? { tools: appointmentTools } : {}
             );
             const openaiDuration = Date.now() - openaiStartTime;
             logger.performance('OpenAI Generation', openaiDuration, {
@@ -261,12 +303,74 @@ export default class EmbedService {
                 tokensOut: response.tokensOut
             });
 
+            // Handle function call: book_appointment
+            let appointmentCreated = null;
+            if (response.toolCall?.function?.name === 'book_appointment') {
+                try {
+                    const args = JSON.parse(response.toolCall.function.arguments);
+                    const { findBestResource } = await import('../appointments/resourceAvailability.service.js');
+                    const best = await findBestResource(
+                        chatbot._id.toString(),
+                        args.date,
+                        args.time,
+                        args.guest_count || 1
+                    );
+                    if (best) {
+                        // Ensure date is in the future — fix year if AI hallucinated a past year
+                        let dateStr = args.date;
+                        const parsedDate = new Date(`${dateStr}T${args.time}:00.000Z`);
+                        if (parsedDate < new Date()) {
+                            const now = new Date();
+                            const currentYear = now.getUTCFullYear();
+                            const candidate = new Date(`${currentYear}-${dateStr.slice(5)}T${args.time}:00.000Z`);
+                            dateStr = (candidate > now ? candidate : new Date(`${currentYear + 1}-${dateStr.slice(5)}T${args.time}:00.000Z`))
+                                .toISOString().split('T')[0];
+                        }
+                        const scheduledAt = new Date(`${dateStr}T${args.time}:00.000Z`);
+                        const Appointment = (await import('../../models/Appointment.js')).default;
+                        // Map custom fields to standard appointment fields
+                        const fields = chatbot.appointmentFields?.length ? chatbot.appointmentFields : [
+                            { fieldId: 'name' }, { fieldId: 'phone' },
+                        ];
+                        const getName = () => fields.find(f => f.fieldId === 'name') ? args['name'] : args['customer_name'];
+                        const getPhone = () => fields.find(f => f.fieldId === 'phone') ? args['phone'] : args['customer_phone'];
+                        const getEmail = () => fields.find(f => f.fieldId === 'email') ? args['email'] : args['customer_email'];
+                        const extraNotes = fields.filter(f => !['name','phone','email'].includes(f.fieldId) && args[f.fieldId])
+                            .map(f => `${f.label}: ${args[f.fieldId]}`).join(' | ');
+
+                        appointmentCreated = await Appointment.create({
+                            chatbotId: chatbot._id,
+                            workspaceId: chatbot.workspaceId,
+                            conversationId: conversation._id,
+                            resourceId: best.id,
+                            guestCount: args.guest_count || 1,
+                            scheduledAt,
+                            durationMinutes: best.durationMinutes || 90,
+                            customerName: getName() || args.customer_name || '',
+                            customerEmail: getEmail() || '',
+                            customerPhone: getPhone() || '',
+                            notes: extraNotes || args.notes || '',
+                            status: 'scheduled',
+                        });
+                        await Chatbot.updateOne({ _id: chatbot._id }, { $inc: { 'stats.totalAppointments': 1 } });
+                        // Build confirmation message
+                        const confirmedDateStr = scheduledAt.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+                        response.content = `✅ ¡Reserva confirmada, ${args.customer_name}! Te esperamos el **${confirmedDateStr} a las ${args.time}** (${args.guest_count || 1} ${args.guest_count === 1 ? 'persona' : 'personas'}). Recibirás una confirmación. ¿Hay algo más en lo que pueda ayudarte?`;
+                    } else {
+                        response.content = `Lo siento, ese horario ya no está disponible. ¿Te acomoda otro horario?`;
+                    }
+                } catch (fnErr) {
+                    logger.error('Error processing book_appointment tool call', { error: fnErr.message });
+                    response.content = `Hubo un problema al confirmar tu reserva. Por favor intenta de nuevo.`;
+                }
+            }
+
             // 11. Guardar respuesta del bot
             const botMessage = await Message.create({
                 conversationId: conversation._id,
                 chatbotId: chatbot._id,
                 role: 'assistant',
-                content: response.content,
+                content: response.content || '...',
                 metadata: {
                     ragChunksUsed: ragChunks.map(c => c.chunkId),
                     ragSimilarityScores: ragChunks.map(c => c.similarity),

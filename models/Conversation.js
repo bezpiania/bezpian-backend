@@ -19,7 +19,16 @@ const conversationSchema = new mongoose.Schema({
   messageCount: { type: Number, default: 0 },
   startedAt: { type: Date, default: Date.now },
   lastMessageAt: { type: Date, default: Date.now },
-  closedAt: Date
+  closedAt: Date,
+
+  // Información de lead en progreso (mientras se completa)
+  leadInfo: {
+    name: String,
+    email: String,
+    phone: String,
+    company: String,
+    updatedAt: Date
+  }
 });
 
 conversationSchema.index({ chatbotId: 1, lastMessageAt: -1 });

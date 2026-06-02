@@ -1,220 +1,271 @@
 /**
  * RankingService
- * Realiza re-ranking inteligente de resultados de búsqueda
+ * Re-ranking inteligente de resultados de búsqueda RAG
+ * Usa múltiples señales para mejorar relevancia
  */
 
+import logger from '../../utils/logger.js';
+
 class RankingService {
-
-  /**
-   * Fusionar y re-rankear resultados de búsqueda semántica y por palabras clave
-   */
-  mergeAndRerank = (semanticResults, keywordResults, query) => {
-    const merged = new Map();
-
-    // Agregar resultados semánticos
-    semanticResults.forEach((result, idx) => {
-      const key = result.text;
-      merged.set(key, {
-        text: result.text,
-        category: result.category,
-        importance: result.importance,
-        source: result.source,
-        tokens: result.tokens,
-        semanticScore: result.similarityScore || 0,
-        keywordScore: 0,
-        finalScore: 0
-      });
-    });
-
-    // Actualizar con resultados de palabras clave
-    keywordResults.forEach((result) => {
-      const key = result.text;
-      if (merged.has(key)) {
-        merged.get(key).keywordScore = result.keywordScore || 0.8;
-      } else {
-        merged.set(key, {
-          text: result.text,
-          category: result.category,
-          importance: result.importance,
-          source: result.source,
-          tokens: result.tokens,
-          semanticScore: 0,
-          keywordScore: result.keywordScore || 0.8,
-          finalScore: 0
-        });
-      }
-    });
-
-    // Calcular score final
-    merged.forEach((result) => {
-      let score =
-        (result.semanticScore * 0.6) +      // Semántica: 60%
-        (result.keywordScore * 0.4);        // Keywords: 40%
-
-      // Boost por importancia
-      if (result.importance === 'high') score *= 1.3;
-      if (result.importance === 'medium') score *= 1.1;
-      if (result.importance === 'low') score *= 0.9;
-
-      // Boost por categoría relevante
-      const relevantCategories = this.detectRelevantCategories(query);
-      if (relevantCategories.includes(result.category)) {
-        score *= 1.25;
-      }
-
-      result.finalScore = Math.min(score, 1.0);
-    });
-
-    // Retornar ordenados por score final
-    return Array.from(merged.values())
-      .sort((a, b) => b.finalScore - a.finalScore)
-      .map(result => ({
-        ...result,
-        finalScore: Math.round(result.finalScore * 100) / 100
-      }));
-  };
-
-  /**
-   * Detectar categorías relevantes según la pregunta
-   */
-  detectRelevantCategories = (query) => {
-    const lowerQuery = query.toLowerCase();
-    const categories = [];
-
-    const patterns = {
-      PRICING: /precio|costo|valor|tarifa|cuánto cuesta|plan|pago|caro|barato|presupuesto/i,
-      FEATURES: /característica|funcionalidad|qué|capacidad|permite|funciona|posibilidad|ventaja|beneficio/i,
-      POLICIES: /política|término|condición|derecho|responsabilidad|privacidad|garantía|devolución/i,
-      CONTACT: /teléfono|email|contacto|dirección|ubicación|número|atención|soporte/i,
-      HOURS: /horario|abierto|cierra|disponible|servicio|horario|abierto|horarios de atención/i,
-      PRODUCT: /producto|servicio|modelo|artículo|item|qué ofrece|que venden/i
+  constructor() {
+    this.weights = {
+      similarity: 0.40,  // Similitud vectorial (principal)
+      recency: 0.20,     // Documentos recientes
+      popularity: 0.15,  // Documentos frecuentemente usados
+      completeness: 0.15, // Metadata completa
+      typeBoost: 0.10    // Prioridad por tipo
     };
+  }
 
-    Object.entries(patterns).forEach(([category, pattern]) => {
-      if (pattern.test(lowerQuery)) {
-        categories.push(category);
+  /**
+   * Re-rankea resultados del UnifiedSearchService
+   * Toma en cuenta similitud, recencia, popularidad, completitud y tipo
+   */
+  async rerank(results, options = {}) {
+    try {
+      if (!results || results.length === 0) {
+        return [];
       }
-    });
 
-    return categories.length > 0 ? categories : [];
-  };
+      // Aplicar scoring a cada resultado
+      const scored = await Promise.all(
+        results.map(r => this.scoreResult(r, options))
+      );
+
+      // Ordenar por score final
+      scored.sort((a, b) => b.finalScore - a.finalScore);
+
+      logger.info('Results re-ranked', {
+        resultsCount: results.length,
+        topScores: scored.slice(0, 3).map(s => ({
+          type: s.type,
+          score: s.finalScore.toFixed(2)
+        }))
+      });
+
+      return scored.map(s => ({
+        ...s.original,
+        rankingScore: s.finalScore,
+        rankingDetails: s.details
+      }));
+    } catch (error) {
+      logger.error('Error in ranking', { error: error.message });
+      return results; // Fallback
+    }
+  }
 
   /**
-   * Extraer palabras clave de la pregunta
+   * Calcula score compuesto para un resultado
    */
-  extractKeywords = (query) => {
-    const stopwords = [
-      'el', 'la', 'de', 'que', 'es', 'y', 'a', 'en', 'un', 'una',
-      'por', 'con', 'su', 'para', 'o', 'del', 'las', 'los', 'se',
-      'cuál', 'cómo', 'cuándo', 'dónde', 'cuánto', 'quién', 'por qué',
-      'esta', 'este', 'ese', 'esa', 'son', 'fue', 'era', 'el', 'la'
-    ];
+  async scoreResult(result, options = {}) {
+    const scores = {};
 
-    const words = query
-      .toLowerCase()
-      .split(/\s+/)
-      .filter(w => w.length > 2 && !stopwords.includes(w));
+    // 1. Similitud (40%)
+    scores.similarity = result.similarity || 0;
 
-    return words;
-  };
+    // 2. Recencia (20%)
+    scores.recency = this.calculateRecency(result);
+
+    // 3. Popularidad (15%)
+    scores.popularity = this.calculatePopularity(result);
+
+    // 4. Completitud (15%)
+    scores.completeness = this.calculateCompleteness(result);
+
+    // 5. Tipo boost (10%)
+    scores.typeBoost = this.calculateTypeBoost(result);
+
+    // Score final normalizado
+    const finalScore = Object.entries(this.weights).reduce((sum, [key, weight]) => {
+      return sum + ((scores[key] || 0) * weight);
+    }, 0);
+
+    return {
+      original: result,
+      finalScore: Math.min(1, Math.max(0, finalScore)),
+      type: result.type,
+      details: {
+        similarity: scores.similarity.toFixed(3),
+        recency: scores.recency.toFixed(3),
+        popularity: scores.popularity.toFixed(3),
+        completeness: scores.completeness.toFixed(3),
+        typeBoost: scores.typeBoost.toFixed(3)
+      }
+    };
+  }
 
   /**
-   * Calcular relevancia de un documento para una consulta
+   * Score de recencia: documentos recientes pesan más
    */
-  calculateRelevance = (document, query) => {
-    let relevance = 0;
-
-    // 1. Longitud - documentos más largos suelen ser más informativos
-    const wordCount = document.text.split(/\s+/).length;
-    relevance += Math.min(wordCount / 100, 0.2); // Máximo 0.2
-
-    // 2. Importancia del documento
-    if (document.importance === 'high') relevance += 0.3;
-    if (document.importance === 'medium') relevance += 0.15;
-    if (document.importance === 'low') relevance += 0.05;
-
-    // 3. Coincidencia de categoría
-    const relevantCategories = this.detectRelevantCategories(query);
-    if (relevantCategories.includes(document.category)) {
-      relevance += 0.35;
+  calculateRecency(result) {
+    if (!result.metadata?.createdAt) {
+      return 0.5; // Neutral
     }
 
-    // 4. Coincidencia de palabras clave
-    const keywords = this.extractKeywords(query);
-    const keywordMatches = keywords.filter(kw =>
-      document.text.toLowerCase().includes(kw)
-    ).length;
-    relevance += Math.min((keywordMatches / keywords.length) * 0.1, 0.1);
+    const now = Date.now();
+    const age = now - new Date(result.metadata.createdAt).getTime();
+    const daysOld = age / (1000 * 60 * 60 * 24);
 
-    return Math.min(relevance, 1.0);
-  };
-
-  /**
-   * Filtrar documentos por score mínimo
-   */
-  filterByScore = (results, minScore = 0.6) => {
-    return results.filter(r => r.finalScore >= minScore);
-  };
+    if (daysOld <= 7) {
+      return 1 - (daysOld / 7) * 0.5; // 1.0 today -> 0.5 in 7 days
+    }
+    return Math.max(0.2, 0.5 - daysOld / 100);
+  }
 
   /**
-   * Diversificar resultados (no repetir sources)
+   * Score de popularidad: documentos/productos usados frecuentemente
    */
-  diversify = (results, maxPerSource = 2) => {
+  calculatePopularity(result) {
+    if (result.viewCount) {
+      // Log scale: 0 views = 0, 100 views = 0.63, 1000 = 0.85
+      return Math.min(1, Math.log(result.viewCount + 1) / Math.log(1000));
+    }
+    // Productos típicamente no tienen viewCount
+    return result.type === 'product' ? 0.7 : 0.5;
+  }
+
+  /**
+   * Score de completitud: metadata completa es buena señal
+   */
+  calculateCompleteness(result) {
+    let score = 0;
+
+    if (result.type === 'document') {
+      if (result.metadata?.sourceFile) score += 0.33;
+      if (result.metadata?.pageNumber) score += 0.33;
+      if (result.text?.length > 200) score += 0.34;
+    } else if (result.type === 'product') {
+      if (result.description?.length > 50) score += 0.33;
+      if (result.price > 0) score += 0.33;
+      if (result.category) score += 0.34;
+    } else if (result.type === 'company') {
+      const fields = [result.company?.name, result.hours, result.payments, result.social]
+        .filter(Boolean).length;
+      score = Math.min(1, fields / 4);
+    }
+
+    return score;
+  }
+
+  /**
+   * Boost por tipo: priorizar productos sobre documentos
+   */
+  calculateTypeBoost(result) {
+    const boosts = {
+      'product': 1.0,   // Máximo
+      'company': 0.8,   // Medio
+      'document': 0.6   // Menor
+    };
+    return boosts[result.type] || 0.5;
+  }
+
+  /**
+   * Filtra resultados por relevancia mínima
+   */
+  filterByRelevance(results, minScore = 0.30) {
+    return results.filter(r => {
+      const score = r.rankingScore || r.similarity || 0;
+      return score >= minScore;
+    });
+  }
+
+  /**
+   * Agrupa resultados por tipo de dato
+   */
+  groupByType(results) {
+    const grouped = {
+      products: [],
+      documents: [],
+      company: []
+    };
+
+    results.forEach(r => {
+      if (r.type === 'product') grouped.products.push(r);
+      else if (r.type === 'document') grouped.documents.push(r);
+      else if (r.type === 'company') grouped.company.push(r);
+    });
+
+    return grouped;
+  }
+
+  /**
+   * Diversifica resultados (máximo N por source)
+   */
+  diversify(results, maxPerSource = 2) {
     const sourceCount = {};
     const diversified = [];
 
     results.forEach(result => {
-      if (!sourceCount[result.source]) {
-        sourceCount[result.source] = 0;
-      }
+      const source = result.source || 'unknown';
+      if (!sourceCount[source]) sourceCount[source] = 0;
 
-      if (sourceCount[result.source] < maxPerSource) {
+      if (sourceCount[source] < maxPerSource) {
         diversified.push(result);
-        sourceCount[result.source]++;
+        sourceCount[source]++;
       }
     });
 
     return diversified;
-  };
+  }
 
   /**
-   * Aplicar todos los filtros y mejoras
+   * Retorna top K resultados
    */
-  rankAndFilter = (semanticResults, keywordResults, query, options = {}) => {
+  topK(results, k = 5) {
+    return results.slice(0, k);
+  }
+
+  /**
+   * Pipeline completo: re-rank + filtro + diversify + topK
+   */
+  async process(results, options = {}) {
     const {
-      minScore = 0.6,
+      minScore = 0.30,
       topK = 5,
       maxPerSource = 2,
       diversify: shouldDiversify = true
     } = options;
 
-    // 1. Fusionar y re-rankear
-    let ranked = this.mergeAndRerank(semanticResults, keywordResults, query);
+    try {
+      // 1. Re-ranking
+      let processed = await this.rerank(results, options);
 
-    // 2. Filtrar por score mínimo
-    ranked = this.filterByScore(ranked, minScore);
+      // 2. Filtrar por relevancia
+      processed = this.filterByRelevance(processed, minScore);
 
-    if (ranked.length === 0) {
+      if (processed.length === 0) {
+        logger.warn('No results after filtering', { minScore });
+        return {
+          results: [],
+          grouped: { products: [], documents: [], company: [] },
+          message: 'No se encontró información relevante'
+        };
+      }
+
+      // 3. Diversificar si aplica
+      if (shouldDiversify && processed.length > maxPerSource * 3) {
+        processed = this.diversify(processed, maxPerSource);
+      }
+
+      // 4. Top K
+      const topResults = this.topK(processed, topK);
+      const grouped = this.groupByType(topResults);
+
+      return {
+        results: topResults,
+        grouped,
+        totalFound: processed.length,
+        message: `Se encontraron ${processed.length} documentos relevantes`
+      };
+    } catch (error) {
+      logger.error('Error in ranking pipeline', { error: error.message });
       return {
         results: [],
-        message: 'No se encontró información relevante'
+        grouped: { products: [], documents: [], company: [] },
+        error: error.message
       };
     }
-
-    // 3. Diversificar si aplica
-    if (shouldDiversify) {
-      ranked = this.diversify(ranked, maxPerSource);
-    }
-
-    // 4. Tomar top K
-    const topResults = ranked.slice(0, topK);
-
-    return {
-      results: topResults,
-      totalFound: ranked.length,
-      message: `Se encontraron ${ranked.length} documentos relevantes`
-    };
-  };
+  }
 }
 
-export default RankingService;
+export default new RankingService();

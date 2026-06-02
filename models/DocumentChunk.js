@@ -21,4 +21,18 @@ documentChunkSchema.index({ documentId: 1 });
 documentChunkSchema.index({ chatbotId: 1 });
 documentChunkSchema.index({ text: 'text' });
 
+// Vector search index for semantic similarity
+documentChunkSchema.index(
+  { embedding: 'cosmosSearch' },
+  {
+    cosmosSearchOptions: {
+      kind: 'vector-ivf',
+      m: 4,
+      efConstruction: 400,
+      efSearch: 400,
+      metric: 'cosine'
+    }
+  }
+);
+
 export default mongoose.model('DocumentChunk', documentChunkSchema);

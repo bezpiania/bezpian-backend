@@ -31,6 +31,25 @@ const productSchema = new mongoose.Schema({
     syncError: String
   },
   manuallyUploaded: { type: Boolean, default: false },
+  giftOccasion: [{
+    _id: false,
+    occasion: {
+      type: String,
+      enum: [
+        'mothers_day',
+        'fathers_day',
+        'birthday',
+        'anniversary',
+        'christmas',
+        'valentines',
+        'graduation',
+        'newborn',
+        'get_well',
+        'thank_you'
+      ]
+    },
+    reason: String
+  }],
   embedding: [Number],
   embeddingText: String,
   createdAt: { type: Date, default: Date.now },
@@ -40,5 +59,20 @@ const productSchema = new mongoose.Schema({
 productSchema.index({ chatbotId: 1, sku: 1 }, { unique: true });
 productSchema.index({ chatbotId: 1 });
 productSchema.index({ embedding: 'cosmosSearch' }, { cosmosSearchOptions: { kind: 'vector-ivf', m: 4, efConstruction: 400, efSearch: 400, metric: 'cosine' } });
+
+// Full-text search index for professional keyword search
+productSchema.index({
+  name: 'text',
+  description: 'text',
+  category: 'text',
+  tags: 'text'
+}, {
+  weights: {
+    name: 10,          // Nombre es 10x más importante
+    tags: 8,           // Tags es 8x más importante
+    category: 4,       // Categoría es 4x más importante
+    description: 1     // Descripción es 1x importante
+  }
+});
 
 export default mongoose.model('Product', productSchema);

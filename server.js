@@ -76,6 +76,9 @@ app.use('/api/workspaces', authMiddleware, WorkspaceRoutes);
 // Resource routes nested under chatbots
 app.use('/api/workspaces/:workspaceId/chatbots/:chatbotId/resources', authMiddleware, ResourceRoutes);
 
+// Workspace-level appointments (all chatbots)
+app.use('/api/workspaces/:wsId/appointments', authMiddleware, AppointmentRoutes);
+
 // Legacy direct routes (para compatibilidad)
 app.use('/api/conversations', authMiddleware, ConversationRoutes);
 app.use('/api/documents', authMiddleware, DocumentRoutes);

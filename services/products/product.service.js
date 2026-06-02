@@ -113,6 +113,9 @@ export default class ProductService {
       if (updateData.stock !== undefined) product.stock = parseInt(updateData.stock);
       if (updateData.category) product.category = updateData.category;
       if (updateData.tags) product.tags = Array.isArray(updateData.tags) ? updateData.tags : updateData.tags.split(',').map(t => t.trim());
+      if (updateData.imageUrl) product.imageUrl = updateData.imageUrl;
+      if (updateData.sku) product.sku = updateData.sku;
+      if (updateData.giftOccasion) product.giftOccasion = updateData.giftOccasion;
 
       // Si hay nueva imagen, guardarla y eliminar la antigua
       if (imageFile) {

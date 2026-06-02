@@ -112,6 +112,8 @@ class ChatbotConfigService {
       const company = data.company;
       const instructions = data.instructions;
       const chatbot = await (await import('../../models/Chatbot.js')).default.findById(chatbotId);
+      const Resource = (await import('../../models/Resource.js')).default;
+      const resources = await Resource.find({ chatbotId, isActive: true });
 
       if (!company || !company.company) {
         logger.warn('⚠️ Company info not configured for workspace:', workspaceId);
@@ -216,37 +218,58 @@ NUNCA PREGUNTES: Cotización si no hay cantidad/precio en la conversación
 ${(() => {
   const cal = chatbot?.integrations?.calendar;
   const calEnabled = cal?.enabled === true;
-  const hasHours = cal?.bookingHoursStart && cal?.bookingHoursEnd;
-  const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-  const bookingDays = cal?.bookingDays?.length ? cal.bookingDays.map(d => days[d]).join(', ') : null;
+  const hasResources = resources && resources.length > 0;
 
   if (!calEnabled) {
-    return `📅 AGENDAMIENTO DE CITAS:
-No realizamos citas ni reservas. Si el usuario menciona "cita", "agendar" o "reserva", responde claramente: "Por el momento no gestionamos citas ni reservas. Para más información contáctanos directamente."`;
+    return `📅 AGENDAMIENTO / RESERVAS:
+No gestionamos reservas ni citas. Si el usuario menciona "reserva", "mesa", "cita", "agendar", responde: "Por el momento no gestionamos reservas. Para más información contáctanos directamente."`;
   }
 
-  if (!hasHours) {
-    return `📅 AGENDAMIENTO DE CITAS:
-El agendamiento está activado pero los horarios aún no están configurados. Si el usuario pregunta por citas, responde: "Puedes coordinar una cita contactándonos directamente al ${company.company?.phone || '[teléfono]'} o a ${company.company?.email || '[email]'}."`;
+  if (!hasResources) {
+    return `📅 AGENDAMIENTO / RESERVAS:
+El agendamiento está activado pero aún no hay recursos configurados (mesas, especialistas, etc). Si el usuario pregunta por reservas, responde: "Puedes coordinar una reserva contactándonos directamente al ${company.company?.phone || '[teléfono]'} o a ${company.company?.email || '[email]'}."`;
   }
 
-  return `📅 AGENDAMIENTO DE CITAS:
-CUANDO OFRECER: Cuando el usuario mencione "cita", "agendar", "reserva", "appointment", o quiera conocer disponibilidad.
-HORARIOS PARA AGENDAR: ${cal.bookingHoursStart} - ${cal.bookingHoursEnd}${bookingDays ? `, solo ${bookingDays}` : ''}.
-CÓMO OFRECER: De forma natural y conversacional:
-  ✓ "Claro, podemos agendar una cita de ${cal.bookingHoursStart} a ${cal.bookingHoursEnd}. ¿Qué día te vendría mejor?"
-  ✗ "¿Deseas agendar una cita? Si/No"
+  const resourceSummary = resources.map(r => {
+    const activeDays = ['mon','tue','wed','thu','fri','sat','sun']
+      .filter(d => r.schedule?.[d]?.enabled && r.schedule[d].slots?.length > 0)
+      .map(d => ({ mon:'Lunes',tue:'Martes',wed:'Miércoles',thu:'Jueves',fri:'Viernes',sat:'Sábado',sun:'Domingo' })[d]);
+    const sampleSlots = ['mon','tue','wed','thu','fri','sat','sun']
+      .flatMap(d => r.schedule?.[d]?.enabled ? (r.schedule[d].slots || []).map(s => s.time) : [])
+      .filter((v, i, a) => a.indexOf(v) === i).slice(0, 5).join(', ');
+    return `  - ${r.name} (cap. ${r.capacity} personas)${activeDays.length ? `: ${activeDays.join(', ')}` : ''}${sampleSlots ? ` — slots: ${sampleSlots}` : ''}`;
+  }).join('\n');
 
-📋 DATOS NECESARIOS PARA CITA:
-- Nombre (OBLIGATORIO)
-- Teléfono o Email (al menos uno)
-- Fecha y hora preferida
-- Motivo de la cita (opcional pero útil)
+  const apptFields = chatbot.appointmentFields?.length ? chatbot.appointmentFields : [
+    { fieldId: 'name', label: 'Nombre', required: true },
+    { fieldId: 'phone', label: 'Teléfono', required: true },
+  ];
+  const requiredFields = apptFields.filter(f => f.required).map(f => `- ${f.label} (OBLIGATORIO)`).join('\n');
+  const optionalFields = apptFields.filter(f => !f.required).map(f => `- ${f.label}${f.helpText ? ': ' + f.helpText : ''} (opcional)`).join('\n');
+  const allFieldsText = [requiredFields, optionalFields].filter(Boolean).join('\n');
 
-VALIDACIÓN: Los horarios para agendar deben respetar:
-  - Dentro de ${cal.bookingHoursStart}-${cal.bookingHoursEnd}
-  ${bookingDays ? `- Días: ${bookingDays}` : ''}
-  - Máximo ${cal.maxDaysInAdvance || 30} días en avance`;
+  return `📅 RESERVAS:
+CUANDO ACTUAR: Cuando el usuario mencione "reserva", "mesa", "disponibilidad", "agendar", o quiera venir a comer/visitar.
+
+RECURSOS DISPONIBLES:
+${resourceSummary}
+
+DATOS QUE DEBES RECOPILAR ANTES DE CONFIRMAR:
+${allFieldsText}
+
+FLUJO OBLIGATORIO — sé cálido y conversacional:
+1. Pregunta cuántas personas son (si no lo menciona)
+2. Informa los días y horarios disponibles
+3. El usuario elige fecha y hora
+4. Recopila los datos de forma natural, uno o dos a la vez (NO hagas un formulario)
+5. Una vez que tengas TODOS los datos obligatorios → llama book_appointment
+IMPORTANTE: NUNCA confirmes sin tener todos los campos obligatorios. NUNCA uses "Usuario" como nombre.
+
+EJEMPLOS:
+  ✓ "¡Con gusto! Tenemos mesas los martes y miércoles a las 12:00, 13:00 y 14:00. ¿Para cuántas personas y qué día te acomoda?"
+  ✓ "Perfecto, el martes a las 13:00. ¿Me das tu nombre y teléfono para confirmar?"
+  ✗ "Completa el formulario." / "¿Deseas reservar? Si/No"`;
+
 })()}
 
 🎁 RECOMENDACIONES DE REGALO:

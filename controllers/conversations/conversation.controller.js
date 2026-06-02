@@ -38,13 +38,32 @@ class ConversationController {
       // Pagination
       const skip = (page - 1) * limit;
       const conversations = await Conversation.find(filter)
+        .populate('chatbotId', 'name personality.emoji personality.color')
         .sort({ lastMessageAt: -1 })
         .skip(skip)
         .limit(parseInt(limit));
 
+      // Enrich conversations with last message preview
+      const conversationsWithMessages = await Promise.all(
+        conversations.map(async (conv) => {
+          const lastMessage = await Message.findOne({
+            conversationId: conv._id
+          }).sort({ createdAt: -1 }).lean();
+
+          return {
+            ...conv.toObject(),
+            lastMessagePreview: lastMessage?.content || '(Sin mensajes)',
+            lastMessageRole: lastMessage?.role || 'user',
+            botName: conv.chatbotId?.name || 'Bot',
+            botEmoji: conv.chatbotId?.personality?.emoji || '🤖',
+            botColor: conv.chatbotId?.personality?.color || 'voltage'
+          };
+        })
+      );
+
       res.json({
         success: true,
-        data: conversations,
+        data: conversationsWithMessages,
         total: total,
         page: parseInt(page),
         limit: parseInt(limit)

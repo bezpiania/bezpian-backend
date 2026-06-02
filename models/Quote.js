@@ -26,6 +26,22 @@ const quoteSchema = new mongoose.Schema({
   shareToken: String,
   status: { type: String, enum: ['draft', 'sent', 'accepted', 'rejected', 'expired'], default: 'draft' },
   expiresAt: Date,
+
+  // Lifecycle tracking
+  sentAt: Date,
+  viewedAt: Date,
+  acceptedAt: Date,
+  viewCount: { type: Number, default: 0 },
+
+  // Cached company info at quote time
+  companySummary: {
+    name: String,
+    email: String,
+    phone: String,
+    address: String,
+    website: String
+  },
+
   createdAt: { type: Date, default: Date.now }
 });
 

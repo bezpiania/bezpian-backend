@@ -28,7 +28,7 @@ class OpenAIService {
   /**
    * Genera respuesta usando OpenAI con contexto
    */
-  async generateResponse(chatbot, userMessage, messages) {
+  async generateResponse(chatbot, userMessage, messages, options = {}) {
     try {
       if (!chatbot.openaiApiKey) {
         throw new Error('API key de OpenAI no configurada');
@@ -37,26 +37,36 @@ class OpenAIService {
       const client = new OpenAI({ apiKey: chatbot.openaiApiKey });
       const startTime = Date.now();
 
-      const response = await client.chat.completions.create({
+      const params = {
         model: chatbot.openaiModel,
-        messages: messages,
+        messages,
         temperature: chatbot.openaiSettings.temperature,
         max_tokens: chatbot.openaiSettings.maxTokens,
-        top_p: chatbot.openaiSettings.topP
-      });
+        top_p: chatbot.openaiSettings.topP,
+      };
+
+      if (options.tools) {
+        params.tools = options.tools;
+        params.tool_choice = 'auto';
+      }
+
+      const response = await client.chat.completions.create(params);
 
       const latencyMs = Date.now() - startTime;
       const tokensIn = response.usage.prompt_tokens;
       const tokensOut = response.usage.completion_tokens;
       const cost = this.calculateCost(chatbot.openaiModel, tokensIn, tokensOut);
+      const choice = response.choices[0];
 
       return {
-        content: response.choices[0].message.content,
+        content: choice.message.content,
+        toolCall: choice.message.tool_calls?.[0] || null,
+        finishReason: choice.finish_reason,
         tokensIn,
         tokensOut,
         cost,
         latencyMs,
-        model: chatbot.openaiModel
+        model: chatbot.openaiModel,
       };
     } catch (error) {
       throw new Error(this.handleError(error));
