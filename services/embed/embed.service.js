@@ -47,6 +47,42 @@ function buildAppointmentTool(chatbot) {
     };
 }
 
+function buildOrderTool(chatbot) {
+    const delivery = chatbot.deliveryConfig || {};
+    return {
+        type: 'function',
+        function: {
+            name: 'create_order',
+            description: `Crea un pedido de delivery cuando el cliente ha confirmado todos los productos, su dirección de entrega y sus datos de contacto. Llama esta función SOLO cuando tengas: al menos un producto con cantidad, nombre del cliente, teléfono y dirección.`,
+            parameters: {
+                type: 'object',
+                properties: {
+                    customer_name:     { type: 'string', description: 'Nombre completo del cliente' },
+                    customer_phone:    { type: 'string', description: 'Teléfono del cliente' },
+                    customer_email:    { type: 'string', description: 'Email del cliente (opcional)' },
+                    delivery_address:  { type: 'string', description: 'Dirección completa de entrega' },
+                    delivery_zone:     { type: 'string', description: 'Zona o barrio de entrega' },
+                    notes:             { type: 'string', description: 'Notas adicionales del pedido (opcional)' },
+                    items: {
+                        type: 'array',
+                        description: 'Lista de productos pedidos',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                name:       { type: 'string', description: 'Nombre del producto' },
+                                quantity:   { type: 'integer', description: 'Cantidad' },
+                                unit_price: { type: 'number', description: 'Precio unitario' },
+                            },
+                            required: ['name', 'quantity', 'unit_price'],
+                        },
+                    },
+                },
+                required: ['customer_name', 'customer_phone', 'delivery_address', 'items'],
+            },
+        },
+    };
+}
+
 // Limpieza de cache cada 30 minutos
 setInterval(() => {
     advancedRag.cleanupCache();
@@ -311,12 +347,14 @@ export default class EmbedService {
             const Resource = (await import('../../models/Resource.js')).default;
             const activeResources = calEnabled ? await Resource.find({ chatbotId: chatbot._id, isActive: true }) : [];
             const appointmentTools = activeResources.length > 0 ? [buildAppointmentTool(chatbot)] : [];
+            const deliveryTools = chatbot.deliveryConfig?.enabled ? [buildOrderTool(chatbot)] : [];
+            const allTools = [...appointmentTools, ...deliveryTools];
 
             const response = await openaiService.generateResponse(
                 chatbot,
                 content,
                 messages,
-                appointmentTools.length ? { tools: appointmentTools } : {}
+                allTools.length ? { tools: allTools } : {}
             );
             const openaiDuration = Date.now() - openaiStartTime;
             logger.performance('OpenAI Generation', openaiDuration, {
@@ -383,6 +421,48 @@ export default class EmbedService {
                 } catch (fnErr) {
                     logger.error('Error processing book_appointment tool call', { error: fnErr.message });
                     response.content = `Hubo un problema al confirmar tu reserva. Por favor intenta de nuevo.`;
+                }
+            }
+
+            // Handle create_order tool call
+            if (response.toolCall?.function?.name === 'create_order') {
+                try {
+                    const args = JSON.parse(response.toolCall.function.arguments);
+                    const delivery = chatbot.deliveryConfig || {};
+                    const items = args.items.map(i => ({
+                        name:       i.name,
+                        quantity:   i.quantity,
+                        unitPrice:  i.unit_price,
+                        totalPrice: i.unit_price * i.quantity,
+                    }));
+                    const subtotal = items.reduce((s, i) => s + i.totalPrice, 0);
+                    const deliveryCost = delivery.deliveryCost || 0;
+                    const total = subtotal + deliveryCost;
+
+                    const OrderModel = (await import('../../models/Order.js')).default;
+                    const order = await OrderModel.create({
+                        chatbotId:        chatbot._id,
+                        workspaceId:      chatbot.workspaceId,
+                        conversationId:   conversation._id,
+                        items,
+                        subtotal,
+                        deliveryCost,
+                        total,
+                        customerName:     args.customer_name,
+                        customerPhone:    args.customer_phone || '',
+                        customerEmail:    args.customer_email || '',
+                        deliveryAddress:  args.delivery_address,
+                        deliveryZone:     args.delivery_zone || '',
+                        estimatedMinutes: delivery.estimatedMinutes || 45,
+                        notes:            args.notes || '',
+                        status:           'new',
+                    });
+
+                    const itemsText = items.map(i => `${i.quantity}× ${i.name}`).join(', ');
+                    response.content = `✅ ¡Pedido confirmado, ${args.customer_name}! 🎉\n\n📦 *Pedido #${order.orderNumber}:* ${itemsText}\n📍 *Dirección:* ${args.delivery_address}\n💰 *Total:* Bs. ${total.toLocaleString()}${deliveryCost > 0 ? ` (incluye Bs. ${deliveryCost} de delivery)` : ''}\n⏱ *Tiempo estimado:* ${delivery.estimatedMinutes || 45} minutos\n\n¡Estamos preparando tu pedido! ¿Hay algo más en que pueda ayudarte?`;
+                } catch (fnErr) {
+                    logger.error('Error processing create_order tool call', { error: fnErr.message });
+                    response.content = `Hubo un problema al registrar tu pedido. Por favor intenta de nuevo.`;
                 }
             }
 

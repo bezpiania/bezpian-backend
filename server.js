@@ -19,6 +19,7 @@ import LeadRoutes from './routes/leads/leadRoutes.js';
 import AppointmentRoutes from './routes/appointments/appointmentRoutes.js';
 import ResourceRoutes from './routes/resources/resourceRoutes.js';
 import InvitationRoutes from './routes/invitations/invitationRoutes.js';
+import OrderRoutes from './routes/orders/orderRoutes.js';
 import QuoteRoutes from './routes/quotes/quoteRoutes.js';
 import BillingRoutes from './routes/billing/billingRoutes.js';
 import EmbedRoutes from './routes/embed/embedRoutes.js';
@@ -82,6 +83,9 @@ app.use('/api/workspaces/:wsId/appointments', authMiddleware, AppointmentRoutes)
 
 // Invitations (public token lookup + protected accept)
 app.use('/api/invitations', InvitationRoutes);
+
+// Orders
+app.use('/api/workspaces/:workspaceId/orders', authMiddleware, OrderRoutes);
 
 // Legacy direct routes (para compatibilidad)
 app.use('/api/conversations', authMiddleware, ConversationRoutes);

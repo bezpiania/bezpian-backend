@@ -272,6 +272,31 @@ EJEMPLOS:
 
 })()}
 
+${(() => {
+  const d = chatbot?.deliveryConfig;
+  if (!d?.enabled) return `🚚 DELIVERY: No ofrecemos servicio de delivery por el momento.`;
+  const zonesText = d.zones?.length ? d.zones.join(', ') : 'consultar disponibilidad';
+  return `🚚 DELIVERY / PEDIDOS A DOMICILIO:
+CUANDO ACTUAR: Cuando el cliente quiera pedir a domicilio, preguntar por delivery, o armar un pedido.
+ZONAS DE DESPACHO: ${zonesText}
+COSTO DE DESPACHO: Bs. ${d.deliveryCost || 0}
+TIEMPO ESTIMADO: ${d.estimatedMinutes || 45} minutos
+${d.minimumOrder > 0 ? `PEDIDO MÍNIMO: Bs. ${d.minimumOrder}` : ''}
+
+FLUJO OBLIGATORIO — sé cálido y conversacional:
+1. Confirma que el cliente quiere delivery y está en zona de despacho
+2. Ayuda al cliente a armar su pedido con los productos disponibles
+3. Confirma el pedido con subtotal + costo de despacho + total
+4. Pide nombre, teléfono y dirección completa
+5. Con todos los datos → llama create_order
+IMPORTANTE: NUNCA confirmes el pedido sin dirección y teléfono del cliente.
+
+EJEMPLOS:
+  ✓ "¡Claro que sí! ¿Qué te gustaría pedir? Puedo ayudarte a armar tu pedido 🍲"
+  ✓ "Perfecto, tu pedido son 2 Pique Macho y 1 Chicharrón. El total es Bs. 150 + Bs. 15 de delivery = Bs. 165. ¿Me das tu dirección y teléfono para confirmar?"
+  ✗ "¿Deseas hacer un pedido? Si/No"`;
+})()}
+
 🎁 RECOMENDACIONES DE REGALO:
 Si el usuario pregunta por regalos (para mamá, papá, cumpleaños, navidad, etc):
 - Los productos recomendados ya han sido seleccionados por el sistema

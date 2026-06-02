@@ -142,6 +142,14 @@ const chatbotSchema = new mongoose.Schema({
     helpText: String,
   }],
 
+  deliveryConfig: {
+    enabled:          { type: Boolean, default: false },
+    zones:            [{ type: String }],
+    deliveryCost:     { type: Number, default: 0 },
+    estimatedMinutes: { type: Number, default: 45 },
+    minimumOrder:     { type: Number, default: 0 },
+  },
+
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
