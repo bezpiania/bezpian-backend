@@ -8,6 +8,7 @@ import LeadsRoutes from './leads.routes.js';
 import QuotesRoutes from './quotes.routes.js';
 import AppointmentsRoutes from './appointments.routes.js';
 import { requireAdmin, requireMember } from '../../middlewares/role.middleware.js';
+import { checkChatbotLimit } from '../../middlewares/planLimits.middleware.js';
 
 const router = express.Router({ mergeParams: true });
 const chatbotController = new ChatbotController();
@@ -20,7 +21,7 @@ router.get('/:id/stats', requireMember, chatbotController.getStats);
 router.get('/:id/openai-config', requireMember, chatbotController.getOpenaiConfig);
 
 // Write — admin only
-router.post('/', requireAdmin, chatbotController.create);
+router.post('/', requireAdmin, checkChatbotLimit, chatbotController.create);
 router.patch('/:id', requireAdmin, chatbotController.update);
 router.delete('/:id', requireAdmin, chatbotController.delete);
 router.post('/:id/activate', requireAdmin, chatbotController.activate);

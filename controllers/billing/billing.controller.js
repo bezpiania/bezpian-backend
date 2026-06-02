@@ -84,32 +84,25 @@ export default class BillingController {
 
     changePlan = async (req, res) => {
         try {
-            const { workspaceId } = req.params;
-            const { planId } = req.body;
-
-            if (!validateMongoId(workspaceId)) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'ID de workspace inválido'
-                });
-            }
-
-            const missing = validateRequired(['planId'], { planId });
-            if (missing) {
-                return res.status(400).json({
-                    success: false,
-                    message: `Campos requeridos: ${missing.join(', ')}`
-                });
-            }
-
-            const response = await billingService.changePlan(workspaceId, planId);
+            const { workspaceId, plan } = req.body;
+            if (!workspaceId || !plan) return res.status(400).json({ success: false, message: 'workspaceId y plan son requeridos' });
+            const response = await billingService.changePlan(workspaceId, plan);
             return res.status(response.success ? 200 : 400).json(response);
         } catch (error) {
             console.error('❌ BillingController.changePlan:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Error al cambiar plan'
-            });
+            return res.status(500).json({ success: false, message: 'Error al cambiar plan' });
+        }
+    };
+
+    getInvoices = async (req, res) => {
+        try {
+            const workspaceId = req.query.workspaceId;
+            if (!workspaceId) return res.status(400).json({ success: false, message: 'workspaceId requerido' });
+            const response = await billingService.getInvoices(workspaceId);
+            return res.status(response.success ? 200 : 400).json(response);
+        } catch (error) {
+            console.error('❌ BillingController.getInvoices:', error);
+            return res.status(500).json({ success: false, message: 'Error al obtener facturas' });
         }
     };
 

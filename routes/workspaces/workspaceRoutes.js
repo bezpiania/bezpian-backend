@@ -6,6 +6,7 @@ import AppointmentRoutes from '../appointments/appointmentRoutes.js';
 import QuoteRoutes from '../quotes/quoteRoutes.js';
 import IntegrationRoutes from '../integrations/integrationRoutes.js';
 import { requireAdmin, requireOwner, requireMember } from '../../middlewares/role.middleware.js';
+import { checkMemberLimit } from '../../middlewares/planLimits.middleware.js';
 
 const router = express.Router();
 const workspaceController = new WorkspaceController();
@@ -19,7 +20,7 @@ router.delete('/:id', requireOwner, workspaceController.delete);
 
 // Members — admin to manage, any member to list
 router.get('/:id/members', requireMember, workspaceController.listMembers);
-router.post('/:id/members', requireAdmin, workspaceController.createMember);
+router.post('/:id/members', requireAdmin, checkMemberLimit, workspaceController.createMember);
 router.put('/:id/members/:userId', requireAdmin, workspaceController.updateMemberInfo);
 router.post('/:id/invite', requireAdmin, workspaceController.inviteMember);
 router.patch('/:id/members/:userId', requireAdmin, workspaceController.updateMemberRole);

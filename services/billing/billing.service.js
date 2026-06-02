@@ -144,33 +144,52 @@ export default class BillingService {
 
     changePlan = async (workspaceId, newPlanId) => {
         try {
-            const plan = PLANS.find(p => p.id === newPlanId);
-            if (!plan) {
-                return { success: false, message: 'Plan no encontrado' };
+            const VALID_PLANS = ['free', 'starter', 'pro', 'enterprise'];
+            if (!VALID_PLANS.includes(newPlanId)) {
+                return { success: false, message: 'Plan no válido' };
             }
 
-            const subscription = await Subscription.findOneAndUpdate(
+            // Update workspace.plan — source of truth for limits
+            const workspace = await Workspace.findByIdAndUpdate(
+                workspaceId,
+                { plan: newPlanId },
+                { new: true }
+            );
+            if (!workspace) return { success: false, message: 'Workspace no encontrado' };
+
+            // Upsert subscription record for billing history
+            await Subscription.findOneAndUpdate(
                 { workspaceId },
                 {
                     planId: newPlanId,
                     status: 'active',
                     currentPeriodStart: new Date(),
-                    currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+                    currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
                 },
-                { new: true }
+                { upsert: true, new: true }
             );
-
-            if (!subscription) {
-                return { success: false, message: 'Suscripción no encontrada' };
-            }
 
             return {
                 success: true,
-                message: 'Plan actualizado correctamente',
-                data: { subscription }
+                message: `Plan cambiado a ${newPlanId} correctamente`,
+                data: { plan: newPlanId },
             };
         } catch (error) {
             console.error('❌ BillingService.changePlan:', error);
+            return { success: false, message: error.message };
+        }
+    };
+
+    getInvoices = async (workspaceId) => {
+        try {
+            const payments = await Payment.find({ workspaceId })
+                .sort({ createdAt: -1 })
+                .limit(12)
+                .select('amount currency status createdAt externalReference paymentMethod');
+
+            return { success: true, data: { invoices: payments } };
+        } catch (error) {
+            console.error('❌ BillingService.getInvoices:', error);
             return { success: false, message: error.message };
         }
     };
