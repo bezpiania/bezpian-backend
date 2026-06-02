@@ -1,4 +1,5 @@
-import { Workspace, WorkspaceMember } from '../../models/index.js';
+import { Workspace, WorkspaceMember, User } from '../../models/index.js';
+import WorkspaceInvitation from '../../models/WorkspaceInvitation.js';
 
 export default class WorkspaceService {
     list = async (userId) => {
@@ -107,12 +108,13 @@ export default class WorkspaceService {
 
     listMembers = async (workspaceId) => {
         try {
-            const members = await WorkspaceMember.find({ workspaceId }).populate('userId', 'email name');
+            const members = await WorkspaceMember.find({ workspaceId, status: { $ne: 'removed' } })
+                .populate('userId', 'email name');
+            const pending = await this.listPendingInvitations(workspaceId);
 
             return {
                 success: true,
-                message: 'Miembros obtenidos',
-                data: members
+                data: { members, pending },
             };
         } catch (error) {
             console.error('❌ WorkspaceService.listMembers:', error);
@@ -122,31 +124,68 @@ export default class WorkspaceService {
 
     inviteMember = async (workspaceId, invitedByUserId, inviteeEmail, role = 'member') => {
         try {
-            const existing = await WorkspaceMember.findOne({
-                workspaceId,
-                'inviteeEmail': inviteeEmail
-            });
+            const email = inviteeEmail.toLowerCase().trim();
 
-            if (existing) {
-                return { success: false, message: 'Miembro ya existe' };
+            // If user already exists in Zapien, add directly
+            const user = await User.findOne({ email });
+            if (user) {
+                const existing = await WorkspaceMember.findOne({ workspaceId, userId: user._id });
+                if (existing && existing.status !== 'removed') {
+                    return { success: false, message: 'Este usuario ya es miembro del workspace' };
+                }
+                if (existing) {
+                    await WorkspaceMember.findByIdAndUpdate(existing._id, { role, status: 'active', joinedAt: new Date() });
+                } else {
+                    await WorkspaceMember.create({ workspaceId, userId: user._id, role, status: 'active', invitedBy: invitedByUserId, joinedAt: new Date() });
+                }
+                return { success: true, message: `${user.name || email} añadido al workspace` };
             }
 
-            const member = await WorkspaceMember.create({
-                workspaceId,
-                userId: inviteeEmail,
-                role,
-                status: 'invited',
-                invitedBy: invitedByUserId,
-                invitedAt: new Date()
-            });
+            // No account yet — create invitation with token
+            const existingInvite = await WorkspaceInvitation.findOne({ workspaceId, email, status: 'pending' });
+            if (existingInvite) {
+                return { success: false, message: 'Ya hay una invitación pendiente para ese email' };
+            }
 
-            return {
-                success: true,
-                message: 'Invitación enviada',
-                data: member
-            };
+            const token = WorkspaceInvitation.generateToken();
+            const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+            await WorkspaceInvitation.create({ workspaceId, email, role, token, invitedBy: invitedByUserId, expiresAt });
+
+            // Send invitation email
+            const workspace = await Workspace.findById(workspaceId).select('name');
+            const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+            const inviteUrl = `${frontendUrl}/invitar?token=${token}`;
+            const emailService = (await import('../notifications/email.service.js')).default;
+            await emailService.sendInvitation({ email, workspaceName: workspace?.name || 'Zapien', role, inviteUrl });
+
+            return { success: true, message: `Invitación enviada a ${email}` };
         } catch (error) {
             console.error('❌ WorkspaceService.inviteMember:', error);
+            return { success: false, message: error.message };
+        }
+    };
+
+    // Fetch pending invitations for a workspace
+    listPendingInvitations = async (workspaceId) => {
+        const invitations = await WorkspaceInvitation.find({ workspaceId, status: 'pending', expiresAt: { $gt: new Date() } })
+            .select('email role createdAt expiresAt').sort({ createdAt: -1 });
+        return invitations;
+    };
+
+    // Accept invitation by token (called on signup/login)
+    acceptInvitation = async (token, userId) => {
+        try {
+            const invitation = await WorkspaceInvitation.findOne({ token, status: 'pending', expiresAt: { $gt: new Date() } });
+            if (!invitation) return { success: false, message: 'Invitación inválida o expirada' };
+
+            const existing = await WorkspaceMember.findOne({ workspaceId: invitation.workspaceId, userId });
+            if (!existing) {
+                await WorkspaceMember.create({ workspaceId: invitation.workspaceId, userId, role: invitation.role, status: 'active', joinedAt: new Date() });
+            }
+
+            await WorkspaceInvitation.findByIdAndUpdate(invitation._id, { status: 'accepted' });
+            return { success: true, workspaceId: invitation.workspaceId, role: invitation.role };
+        } catch (error) {
             return { success: false, message: error.message };
         }
     };

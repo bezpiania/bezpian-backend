@@ -180,6 +180,35 @@ class EmailService {
       return { success: false, error: error.message };
     }
   }
+  async sendInvitation({ email, workspaceName, role, inviteUrl }) {
+    const roleLabels = { admin: 'Administrador', member: 'Operador', owner: 'Owner' };
+    try {
+      await this.transporter.sendMail({
+        from: `"Zapien" <${process.env.SMTP_USER}>`,
+        to: email,
+        subject: `Te invitaron a unirte a ${workspaceName} en Zapien`,
+        html: `
+          <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#F4F0E8;border-radius:12px;">
+            <div style="font-size:22px;font-weight:700;margin-bottom:8px;">Zapien</div>
+            <h2 style="margin:0 0 12px;font-size:20px;">Te invitaron a <em>${workspaceName}</em></h2>
+            <p style="color:#555;margin-bottom:24px;">
+              Tienes una invitación para unirte al workspace <strong>${workspaceName}</strong> como <strong>${roleLabels[role] || role}</strong>.
+            </p>
+            <a href="${inviteUrl}" style="display:inline-block;padding:12px 28px;background:#DCFF1E;color:#15140F;font-weight:700;border-radius:8px;text-decoration:none;font-size:15px;">
+              Aceptar invitación →
+            </a>
+            <p style="margin-top:24px;font-size:12px;color:#888;">
+              Este link expira en 7 días. Si no esperabas esta invitación, ignora este email.
+            </p>
+          </div>
+        `,
+      });
+      return { success: true };
+    } catch (error) {
+      console.error('❌ Error enviando invitación:', error);
+      return { success: false, error: error.message };
+    }
+  }
 }
 
 export default new EmailService();
