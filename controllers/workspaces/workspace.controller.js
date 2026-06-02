@@ -102,6 +102,31 @@ export default class WorkspaceController {
         }
     };
 
+    createMember = async (req, res) => {
+        try {
+            const { userId } = req.user;
+            const { id } = req.params;
+            const { name, email, password, role } = req.body;
+            if (!email || !password) return res.status(400).json({ success: false, message: 'Email y contraseña son requeridos' });
+            const response = await workspaceService.createMember(id, userId, { name, email, password, role });
+            return res.status(response.success ? 201 : 400).json(response);
+        } catch (error) {
+            console.error('❌ WorkspaceController.createMember:', error);
+            return res.status(500).json({ success: false, message: 'Error al crear miembro' });
+        }
+    };
+
+    updateMemberInfo = async (req, res) => {
+        try {
+            const { id, userId: memberId } = req.params;
+            const { name, email, password } = req.body;
+            const response = await workspaceService.updateMemberInfo(id, memberId, { name, email, password });
+            return res.status(response.success ? 200 : 400).json(response);
+        } catch (error) {
+            return res.status(500).json({ success: false, message: 'Error al actualizar miembro' });
+        }
+    };
+
     inviteMember = async (req, res) => {
         try {
             const { userId } = req.user;

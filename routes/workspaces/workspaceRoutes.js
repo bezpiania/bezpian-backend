@@ -19,6 +19,8 @@ router.delete('/:id', requireOwner, workspaceController.delete);
 
 // Members — admin to manage, any member to list
 router.get('/:id/members', requireMember, workspaceController.listMembers);
+router.post('/:id/members', requireAdmin, workspaceController.createMember);
+router.put('/:id/members/:userId', requireAdmin, workspaceController.updateMemberInfo);
 router.post('/:id/invite', requireAdmin, workspaceController.inviteMember);
 router.patch('/:id/members/:userId', requireAdmin, workspaceController.updateMemberRole);
 router.delete('/:id/members/:userId', requireAdmin, workspaceController.removeMember);

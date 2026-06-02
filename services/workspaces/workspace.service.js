@@ -122,6 +122,51 @@ export default class WorkspaceService {
         }
     };
 
+    createMember = async (workspaceId, invitedByUserId, { name, email, password, role = 'member' }) => {
+        try {
+            const normalizedEmail = email.toLowerCase().trim();
+            let user = await User.findOne({ email: normalizedEmail });
+
+            if (user) {
+                // User exists — just add to workspace if not already a member
+                const existing = await WorkspaceMember.findOne({ workspaceId, userId: user._id });
+                if (existing && existing.status !== 'removed') {
+                    return { success: false, message: 'Este usuario ya es miembro del workspace' };
+                }
+                if (existing) {
+                    await WorkspaceMember.findByIdAndUpdate(existing._id, { role, status: 'active', joinedAt: new Date() });
+                } else {
+                    await WorkspaceMember.create({ workspaceId, userId: user._id, role, status: 'active', invitedBy: invitedByUserId, joinedAt: new Date() });
+                }
+                return { success: true, message: `${user.name} añadido al workspace` };
+            }
+
+            // Create new user account
+            const bcrypt = (await import('bcrypt')).default;
+            const passwordHash = await bcrypt.hash(password, 10);
+            user = await User.create({
+                email: normalizedEmail,
+                passwordHash,
+                name: name || normalizedEmail.split('@')[0],
+                emailVerified: true, // admin-created accounts skip verification
+            });
+
+            await WorkspaceMember.create({
+                workspaceId,
+                userId: user._id,
+                role,
+                status: 'active',
+                invitedBy: invitedByUserId,
+                joinedAt: new Date(),
+            });
+
+            return { success: true, message: 'Usuario creado y añadido al workspace', data: { userId: user._id, email: user.email } };
+        } catch (error) {
+            console.error('❌ WorkspaceService.createMember:', error);
+            return { success: false, message: error.message };
+        }
+    };
+
     inviteMember = async (workspaceId, invitedByUserId, inviteeEmail, role = 'member') => {
         try {
             const email = inviteeEmail.toLowerCase().trim();
@@ -197,14 +242,28 @@ export default class WorkspaceService {
                 { role: newRole },
                 { new: true }
             );
-
-            return {
-                success: true,
-                message: 'Rol actualizado',
-                data: member
-            };
+            return { success: true, message: 'Rol actualizado', data: member };
         } catch (error) {
             console.error('❌ WorkspaceService.updateMemberRole:', error);
+            return { success: false, message: error.message };
+        }
+    };
+
+    updateMemberInfo = async (workspaceId, userId, { name, email, password }) => {
+        try {
+            const updates = {};
+            if (name) updates.name = name;
+            if (email) updates.email = email.toLowerCase().trim();
+            if (password) {
+                const bcrypt = (await import('bcrypt')).default;
+                updates.passwordHash = await bcrypt.hash(password, 10);
+            }
+            if (!Object.keys(updates).length) return { success: false, message: 'Nada que actualizar' };
+
+            await User.findByIdAndUpdate(userId, updates);
+            return { success: true, message: 'Usuario actualizado' };
+        } catch (error) {
+            console.error('❌ WorkspaceService.updateMemberInfo:', error);
             return { success: false, message: error.message };
         }
     };
@@ -212,8 +271,7 @@ export default class WorkspaceService {
     removeMember = async (workspaceId, userId) => {
         try {
             await WorkspaceMember.deleteOne({ workspaceId, userId });
-
-            return { success: true, message: 'Miembro removido' };
+            return { success: true, message: 'Miembro eliminado' };
         } catch (error) {
             console.error('❌ WorkspaceService.removeMember:', error);
             return { success: false, message: error.message };

@@ -1,7 +1,7 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-import { User, RefreshToken, Workspace } from '../../models/index.js';
+import { User, RefreshToken, Workspace, WorkspaceMember } from '../../models/index.js';
 
 export default class AuthService {
   signup = async (email, password, name) => {
@@ -68,16 +68,23 @@ export default class AuthService {
       if (!defaultWorkspaceId) {
         const { Workspace } = await import('../../models/index.js');
         const slug = `workspace-${user._id.toString().slice(-8)}`.toLowerCase();
-        const workspace = new Workspace({
-          ownerId: user._id,
-          name: `${user.name}'s Workspace`,
-          slug,
-          plan: 'free'
-        });
+        const workspace = new Workspace({ ownerId: user._id, name: `${user.name}'s Workspace`, slug, plan: 'free' });
         await workspace.save();
         defaultWorkspaceId = workspace._id;
         user.defaultWorkspaceId = defaultWorkspaceId;
         await user.save();
+        // Ensure owner membership exists
+        await WorkspaceMember.findOneAndUpdate(
+          { workspaceId: defaultWorkspaceId, userId: user._id },
+          { role: 'owner', status: 'active', joinedAt: new Date() },
+          { upsert: true, new: true }
+        );
+      } else {
+        // Ensure membership exists for users created before this fix
+        const exists = await WorkspaceMember.findOne({ workspaceId: defaultWorkspaceId, userId: user._id });
+        if (!exists) {
+          await WorkspaceMember.create({ workspaceId: defaultWorkspaceId, userId: user._id, role: 'owner', status: 'active', joinedAt: new Date() });
+        }
       }
 
       const accessToken = jwt.sign(
@@ -95,10 +102,11 @@ export default class AuthService {
 
       await User.updateOne({ _id: user._id }, { lastLoginAt: new Date() });
 
-      // Get user's role in default workspace
-      const { WorkspaceMember } = await import('../../models/index.js');
+      // Get user's role — owner of workspace always gets owner role
+      const workspace = await Workspace.findById(defaultWorkspaceId).select('ownerId');
+      const isOwner = workspace?.ownerId?.toString() === user._id.toString();
       const membership = await WorkspaceMember.findOne({ workspaceId: defaultWorkspaceId, userId: user._id });
-      const workspaceRole = membership?.role || 'member';
+      const workspaceRole = isOwner ? 'owner' : (membership?.role || 'member');
 
       return {
         success: true,
