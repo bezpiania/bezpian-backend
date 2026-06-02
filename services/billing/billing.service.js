@@ -1,4 +1,6 @@
-import { Subscription, Payment, Workspace } from '../../models/index.js';
+import { Subscription, Payment, Workspace, WorkspaceMember } from '../../models/index.js';
+import Chatbot from '../../models/Chatbot.js';
+import Conversation from '../../models/Conversation.js';
 
 const PLANS = [
     {
@@ -28,6 +30,48 @@ const PLANS = [
 ];
 
 export default class BillingService {
+    getUsage = async (workspaceId) => {
+        try {
+            const workspace = await Workspace.findById(workspaceId).select('plan name');
+            if (!workspace) return { success: false, message: 'Workspace no encontrado' };
+
+            const now = new Date();
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            const monthEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+            const [conversations, chatbots, members] = await Promise.all([
+                Conversation.countDocuments({ workspaceId, createdAt: { $gte: monthStart, $lte: monthEnd } }),
+                Chatbot.countDocuments({ workspaceId, status: 'active' }),
+                WorkspaceMember.countDocuments({ workspaceId, status: { $ne: 'removed' } }),
+            ]);
+
+            const LIMITS = {
+                free:       { conversations: 500,   chatbots: 1,  members: 2  },
+                starter:    { conversations: 1000,  chatbots: 1,  members: 2  },
+                pro:        { conversations: 5000,  chatbots: 3,  members: 10 },
+                enterprise: { conversations: 50000, chatbots: -1, members: -1 },
+            };
+
+            const plan   = workspace.plan || 'free';
+            const limits = LIMITS[plan] || LIMITS.free;
+
+            return {
+                success: true,
+                data: {
+                    plan,
+                    workspaceName: workspace.name,
+                    usage: { conversations, chatbots, members },
+                    limits,
+                    periodStart: monthStart,
+                    periodEnd:   monthEnd,
+                },
+            };
+        } catch (error) {
+            console.error('❌ BillingService.getUsage:', error);
+            return { success: false, message: error.message };
+        }
+    };
+
     listPlans = async () => {
         try {
             return {
