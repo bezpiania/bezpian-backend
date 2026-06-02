@@ -95,6 +95,11 @@ export default class AuthService {
 
       await User.updateOne({ _id: user._id }, { lastLoginAt: new Date() });
 
+      // Get user's role in default workspace
+      const { WorkspaceMember } = await import('../../models/index.js');
+      const membership = await WorkspaceMember.findOne({ workspaceId: defaultWorkspaceId, userId: user._id });
+      const workspaceRole = membership?.role || 'member';
+
       return {
         success: true,
         message: 'Login exitoso',
@@ -106,7 +111,8 @@ export default class AuthService {
             name: user.name,
             email: user.email,
             avatar: user.avatar,
-            defaultWorkspaceId
+            defaultWorkspaceId,
+            workspaceRole,
           }
         }
       };

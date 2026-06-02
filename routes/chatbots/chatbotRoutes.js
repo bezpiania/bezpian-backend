@@ -7,38 +7,35 @@ import ConfigRoutes from '../config.routes.js';
 import LeadsRoutes from './leads.routes.js';
 import QuotesRoutes from './quotes.routes.js';
 import AppointmentsRoutes from './appointments.routes.js';
+import { requireAdmin, requireMember } from '../../middlewares/role.middleware.js';
 
 const router = express.Router({ mergeParams: true });
 const chatbotController = new ChatbotController();
 
-// Chatbot CRUD
-router.get('/', chatbotController.list);
-router.post('/', chatbotController.create);
-router.get('/:id', chatbotController.get);
-router.patch('/:id', chatbotController.update);
-router.delete('/:id', chatbotController.delete);
+// Read — any workspace member
+router.get('/', requireMember, chatbotController.list);
+router.get('/:id', requireMember, chatbotController.get);
+router.get('/:id/embed-code', requireMember, chatbotController.getEmbedCode);
+router.get('/:id/stats', requireMember, chatbotController.getStats);
+router.get('/:id/openai-config', requireMember, chatbotController.getOpenaiConfig);
 
-// Chatbot actions
-router.post('/:id/activate', chatbotController.activate);
-router.post('/:id/pause', chatbotController.pause);
-router.get('/:id/embed-code', chatbotController.getEmbedCode);
-router.get('/:id/stats', chatbotController.getStats);
+// Write — admin only
+router.post('/', requireAdmin, chatbotController.create);
+router.patch('/:id', requireAdmin, chatbotController.update);
+router.delete('/:id', requireAdmin, chatbotController.delete);
+router.post('/:id/activate', requireAdmin, chatbotController.activate);
+router.post('/:id/pause', requireAdmin, chatbotController.pause);
+router.patch('/:id/openai-config', requireAdmin, chatbotController.updateOpenaiConfig);
+router.patch('/:id/google-oauth', requireAdmin, chatbotController.updateGoogleOAuthConfig);
+router.get('/:id/calendar/auth-url', requireAdmin, chatbotController.getCalendarAuthUrl);
 
-// OpenAI configuration
-router.patch('/:id/openai-config', chatbotController.updateOpenaiConfig);
-router.get('/:id/openai-config', chatbotController.getOpenaiConfig);
-
-// Calendar OAuth endpoints
-router.patch('/:id/google-oauth', chatbotController.updateGoogleOAuthConfig);
-router.get('/:id/calendar/auth-url', chatbotController.getCalendarAuthUrl);
-
-// Nested routes for documents, conversations and products
+// Nested
 router.use('/:id/documents', DocumentRoutes);
-router.use('/:id/conversations', ConversationRoutes);
-router.use('/:id/products', ProductRoutes);
-router.use('/:id/config', ConfigRoutes);
-router.use('/:id/leads', LeadsRoutes);
-router.use('/:id/quotes', QuotesRoutes);
-router.use('/:id/appointments', AppointmentsRoutes);
+router.use('/:id/conversations', requireMember, ConversationRoutes);
+router.use('/:id/products', requireMember, ProductRoutes);
+router.use('/:id/config', requireMember, ConfigRoutes);
+router.use('/:id/leads', requireMember, LeadsRoutes);
+router.use('/:id/quotes', requireMember, QuotesRoutes);
+router.use('/:id/appointments', requireMember, AppointmentsRoutes);
 
 export default router;
