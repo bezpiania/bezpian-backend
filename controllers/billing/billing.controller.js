@@ -6,7 +6,9 @@ const billingService = new BillingService();
 export default class BillingController {
     getUsage = async (req, res) => {
         try {
-            const { workspaceId } = req.params;
+            // Get workspaceId from query param or user's default workspace
+            const workspaceId = req.query.workspaceId || req.user?.defaultWorkspaceId;
+            if (!workspaceId) return res.status(400).json({ success: false, message: 'workspaceId requerido' });
             const Chatbot = (await import('../../models/Chatbot.js')).default;
             const Conversation = (await import('../../models/Conversation.js')).default;
             const { WorkspaceMember, Workspace } = await import('../../models/index.js');
