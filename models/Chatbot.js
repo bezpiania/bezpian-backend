@@ -89,6 +89,11 @@ const chatbotSchema = new mongoose.Schema({
     }
   },
 
+  openaiError: {
+    code: { type: String, default: null },   // 'QUOTA_EXCEEDED' | 'INVALID_KEY' | null
+    detectedAt: { type: Date, default: null },
+  },
+
   openaiModel: {
     type: String,
     default: 'gpt-3.5-turbo',

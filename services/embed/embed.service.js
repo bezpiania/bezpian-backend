@@ -408,8 +408,11 @@ export default class EmbedService {
                 createdAt: new Date()
             });
 
-            // 12. Cachear respuesta
+            // 12. Cachear respuesta + limpiar error de OpenAI si había uno
             advancedRag.cacheResponse(botId, content, response.content);
+            if (chatbot.openaiError?.code) {
+                setImmediate(() => Chatbot.updateOne({ _id: chatbot._id }, { $set: { 'openaiError.code': null, 'openaiError.detectedAt': null } }));
+            }
 
             // 13. Actualizar estadísticas de la conversación
             conversation.messageCount = (conversation.messageCount || 0) + 2;
@@ -567,6 +570,20 @@ export default class EmbedService {
                 botId,
                 contentLength: content?.length
             });
+
+            // Distinguish OpenAI quota errors from generic errors
+            if (error.message === 'OPENAI_QUOTA_EXCEEDED' || error.message === 'OPENAI_INVALID_KEY') {
+                // Persist error to chatbot so admin can see it in dashboard
+                setImmediate(() => Chatbot.updateOne(
+                    { _id: botId },
+                    { $set: { 'openaiError.code': error.message, 'openaiError.detectedAt': new Date() } }
+                ));
+                return {
+                    success: false,
+                    errorCode: error.message,
+                    message: error.message,
+                };
+            }
 
             return {
                 success: false,

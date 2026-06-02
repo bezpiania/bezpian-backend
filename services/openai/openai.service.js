@@ -87,19 +87,28 @@ class OpenAIService {
    * Maneja errores de OpenAI con mensajes amigables
    */
   handleError(error) {
-    const errorMap = {
-      401: 'API key de OpenAI no válida. Por favor, verifica tu clave.',
-      429: 'Has alcanzado el límite de requests. Intenta más tarde.',
-      500: 'Error en el servidor de OpenAI. Intenta más tarde.',
-      503: 'Servicio de OpenAI no disponible. Intenta más tarde.'
-    };
-
-    if (error.status && errorMap[error.status]) {
-      return errorMap[error.status];
+    // Créditos agotados en OpenAI
+    const code = error?.error?.code || error?.code || '';
+    if (code === 'insufficient_quota' || error?.status === 402) {
+      const err = new Error('OPENAI_QUOTA_EXCEEDED');
+      err.code = 'OPENAI_QUOTA_EXCEEDED';
+      return err.message;
     }
 
-    if (error.message.includes('API key')) {
-      return 'Error de autenticación con OpenAI';
+    if (error.status === 401 || code === 'invalid_api_key') {
+      return 'OPENAI_INVALID_KEY';
+    }
+
+    if (error.status === 429) {
+      return 'Has alcanzado el límite de requests de OpenAI. Intenta más tarde.';
+    }
+
+    if (error.status === 500 || error.status === 503) {
+      return 'El servicio de OpenAI no está disponible. Intenta más tarde.';
+    }
+
+    if (error.message?.includes('API key')) {
+      return 'OPENAI_INVALID_KEY';
     }
 
     return 'Error al procesar tu mensaje. Intenta de nuevo.';
