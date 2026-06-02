@@ -63,6 +63,27 @@ export default class EmbedService {
                 return { success: false, message: 'Chatbot no encontrado' };
             }
 
+            // Check conversation limit for workspace plan
+            const { Workspace } = await import('../../models/index.js');
+            const workspace = await Workspace.findById(chatbot.workspaceId).select('plan');
+            const CONV_LIMITS = { free: 500, starter: 1000, pro: 5000, enterprise: -1 };
+            const limit = CONV_LIMITS[workspace?.plan || 'free'];
+            if (limit > 0) {
+                const now = new Date();
+                const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+                const count = await Conversation.countDocuments({
+                    workspaceId: chatbot.workspaceId,
+                    createdAt: { $gte: monthStart },
+                });
+                if (count >= limit) {
+                    return {
+                        success: false,
+                        limitReached: true,
+                        message: `Este negocio ha alcanzado su límite de conversaciones este mes. Por favor intenta más tarde.`,
+                    };
+                }
+            }
+
             const conversation = new Conversation({
                 chatbotId: chatbot._id,
                 workspaceId: chatbot.workspaceId,
