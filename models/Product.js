@@ -1,78 +1,85 @@
 import mongoose from 'mongoose';
 
+// Variant option (e.g. Size: M, Color: Red)
+const variantSchema = new mongoose.Schema({
+  name:    { type: String, required: true },  // e.g. "Talla M / Rojo"
+  options: [String],                           // e.g. ["XS","S","M","L","XL"]
+  sku:     { type: String },
+  price:   { type: Number },
+  stock:   { type: Number, default: 0 },
+}, { _id: false });
+
 const productSchema = new mongoose.Schema({
-  chatbotId: { type: mongoose.Schema.Types.ObjectId, ref: 'Chatbot', required: true },
+  chatbotId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Chatbot',   required: true },
   workspaceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Workspace', required: true },
-  sku: { type: String, required: true },
-  name: { type: String, required: true },
-  description: String,
-  price: { type: Number, required: true },
-  currency: { type: String, default: 'CLP' },
-  imageUrl: String,
-  imagePath: String,
-  stock: { type: Number, default: 0 },
-  category: String,
-  tags: [String],
+
+  // ── Base fields (all business types) ─────────────────────────────────────
+  sku:         { type: String, default: null },   // optional — required for store
+  name:        { type: String, required: true },
+  description: { type: String },
+  price:       { type: Number, default: 0 },      // 0 = "Consultar"
+  currency:    { type: String, default: 'CLP' },
+  category:    { type: String },
+  tags:        [String],
+  imageUrl:    { type: String },
+  imagePath:   { type: String },
+  available:   { type: Boolean, default: true },
+
+  // ── RESTAURANT fields ─────────────────────────────────────────────────────
+  ingredients:   [String],                        // lista de ingredientes
+  allergens:     [String],                        // Gluten, Lactosa, etc.
+  dietaryTags:   [String],                        // Vegetariano, Vegano, Sin gluten, Picante
+  portionSize:   { type: String },                // Individual / Para compartir / Familiar
+  prepTime:      { type: Number },                // minutos de preparación
+  availableFor:  [String],                        // Almuerzo / Cena / Todo el día
+  calories:      { type: Number },
+
+  // ── STORE fields ──────────────────────────────────────────────────────────
+  brand:         { type: String },
+  barcode:       { type: String },
+  stock:         { type: Number, default: 0 },
+  salePrice:     { type: Number },                // precio oferta
+  weight:        { type: Number },                // kg
+  variants:      [variantSchema],                 // tallas, colores, modelos
+
+  // ── CLINIC fields ─────────────────────────────────────────────────────────
+  duration:          { type: Number },            // minutos de la sesión
+  specialty:         { type: String },            // especialidad médica
+  requiresPrep:      { type: Boolean, default: false },
+  prepInstructions:  { type: String },            // ayuno, ropa cómoda, etc.
+  insuranceCoverage: { type: String },            // qué seguros lo cubren
+  sessionCount:      { type: Number, default: 1 },// nº de sesiones del tratamiento
+
+  // ── Source / sync metadata ────────────────────────────────────────────────
   source: {
     type: String,
     enum: ['manual', 'csv', 'shopify', 'jumpseller', 'woocommerce', 'api'],
-    default: 'manual'
+    default: 'manual',
   },
   sourceMetadata: {
-    externalId: String,
-    externalUrl: String,
-    externalSku: String,
+    externalId:   String,
+    externalUrl:  String,
+    externalSku:  String,
     lastSyncedAt: Date,
-    syncStatus: {
-      type: String,
-      enum: ['synced', 'pending', 'failed'],
-      default: 'pending'
-    },
-    syncError: String
+    syncStatus:   { type: String, enum: ['synced', 'pending', 'failed'], default: 'pending' },
+    syncError:    String,
   },
   manuallyUploaded: { type: Boolean, default: false },
-  giftOccasion: [{
-    _id: false,
-    occasion: {
-      type: String,
-      enum: [
-        'mothers_day',
-        'fathers_day',
-        'birthday',
-        'anniversary',
-        'christmas',
-        'valentines',
-        'graduation',
-        'newborn',
-        'get_well',
-        'thank_you'
-      ]
-    },
-    reason: String
-  }],
-  embedding: [Number],
+
+  // ── Embeddings ────────────────────────────────────────────────────────────
+  embedding:     [Number],
   embeddingText: String,
+
   createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+  updatedAt: { type: Date, default: Date.now },
 });
 
-productSchema.index({ chatbotId: 1, sku: 1 }, { unique: true });
 productSchema.index({ chatbotId: 1 });
+productSchema.index({ chatbotId: 1, sku: 1 }, { sparse: true });
 productSchema.index({ embedding: 'cosmosSearch' }, { cosmosSearchOptions: { kind: 'vector-ivf', m: 4, efConstruction: 400, efSearch: 400, metric: 'cosine' } });
-
-// Full-text search index for professional keyword search
-productSchema.index({
-  name: 'text',
-  description: 'text',
-  category: 'text',
-  tags: 'text'
-}, {
-  weights: {
-    name: 10,          // Nombre es 10x más importante
-    tags: 8,           // Tags es 8x más importante
-    category: 4,       // Categoría es 4x más importante
-    description: 1     // Descripción es 1x importante
-  }
-});
+productSchema.index(
+  { name: 'text', description: 'text', category: 'text', tags: 'text' },
+  { weights: { name: 10, tags: 8, category: 4, description: 1 } }
+);
 
 export default mongoose.model('Product', productSchema);

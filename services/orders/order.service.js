@@ -29,11 +29,12 @@ export default class OrderService {
         }
     };
 
-    updateStatus = async (workspaceId, id, status) => {
+    updateStatus = async (workspaceId, id, status, extra = {}) => {
         try {
+            const update = { status, ...extra };
             const order = await Order.findOneAndUpdate(
                 { _id: id, workspaceId },
-                { status },
+                update,
                 { new: true }
             );
             if (!order) return { success: false, message: 'Pedido no encontrado' };

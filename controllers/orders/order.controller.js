@@ -28,8 +28,11 @@ export default class OrderController {
     updateStatus = async (req, res) => {
         try {
             const { workspaceId, id } = req.params;
-            const { status } = req.body;
-            const response = await orderService.updateStatus(workspaceId, id, status);
+            const { status, trackingCode, returnReason } = req.body;
+            const extra = {};
+            if (trackingCode) extra.trackingCode = trackingCode;
+            if (returnReason) extra.returnReason = returnReason;
+            const response = await orderService.updateStatus(workspaceId, id, status, extra);
             return res.status(response.success ? 200 : 400).json(response);
         } catch (error) {
             return res.status(500).json({ success: false, message: error.message });

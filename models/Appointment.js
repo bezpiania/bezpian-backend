@@ -14,7 +14,22 @@ const appointmentSchema = new mongoose.Schema({
   customerEmail: String,
   customerPhone: String,
   notes: String,
-  status: { type: String, enum: ['scheduled', 'confirmed', 'completed', 'cancelled', 'no_show'], default: 'scheduled' },
+  status: { type: String, enum: ['scheduled', 'confirmed', 'completed', 'cancelled', 'no_show', 'waitlisted'], default: 'scheduled' },
+
+  // RESTAURANT
+  zonePreference: { type: String },              // terraza, interior, etc.
+  occasion:       { type: String },              // cumpleaños, aniversario, etc.
+
+  // CLINIC
+  patientId:      { type: String },              // RUT / CI
+  insurance:      { type: String },              // seguro / obra social
+  consultReason:  { type: String },              // motivo de consulta
+  serviceId:      { type: mongoose.Schema.Types.ObjectId, ref: 'Product' }, // servicio agendado
+  isFollowUp:     { type: Boolean, default: false },
+  followUpOf:     { type: mongoose.Schema.Types.ObjectId, ref: 'Appointment' },
+
+  // Waiting list
+  waitlistPosition: { type: Number },            // posición en lista de espera
   calendarEventId: String,
   calendarEventUrl: String,
   reminderSent: { type: Boolean, default: false },

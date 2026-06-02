@@ -18,11 +18,24 @@ const resourceSchema = new mongoose.Schema({
     enum: ['table', 'person', 'room', 'equipment'],
     default: 'table',
   },
-  capacity: { type: Number, default: 1, min: 1 },
+  capacity:           { type: Number, default: 1, min: 1 },
   isClientSelectable: { type: Boolean, default: false },
-  description: { type: String, trim: true },
-  durationMinutes: { type: Number, default: 60, min: 15 },
-  bufferMinutes: { type: Number, default: 0, min: 0 },
+  description:        { type: String, trim: true },
+  durationMinutes:    { type: Number, default: 60, min: 15 },
+  bufferMinutes:      { type: Number, default: 0, min: 0 },
+
+  // RESTAURANT — zone type (terraza, interior, barra)
+  zoneType:     { type: String, enum: ['interior', 'terraza', 'barra', 'privado', 'any'], default: 'any' },
+
+  // CLINIC — specialties this resource covers
+  specialties:  [{ type: String }],
+
+  // Blocked dates/times (doctor on vacation, etc.)
+  blockedDates: [{
+    _id: false,
+    date:   { type: String },           // YYYY-MM-DD or range
+    reason: { type: String },
+  }],
   schedule: {
     mon: { type: dayScheduleSchema, default: () => ({ enabled: false, slots: [] }) },
     tue: { type: dayScheduleSchema, default: () => ({ enabled: false, slots: [] }) },

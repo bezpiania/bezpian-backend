@@ -22,6 +22,29 @@ const quoteSchema = new mongoose.Schema({
 
   customerData: mongoose.Schema.Types.Mixed,
 
+  // STORE — tienda / e-commerce
+  taxIncluded:     { type: Boolean, default: true },   // precio incluye IVA
+  taxRate:         { type: Number, default: 0 },        // % de IVA (ej: 19)
+  paymentTerms:    { type: String },                    // "Contado", "30 días", "50% adelanto"
+  volumeDiscounts: [{
+    _id: false,
+    minQty:   Number,
+    discount: Number,   // % de descuento
+  }],
+  termsText:       { type: String },                    // términos y condiciones
+  validDays:       { type: Number, default: 30 },       // días de validez
+
+  // CLINIC — clínica / salud
+  sessionCount:      { type: Number },
+  insuranceCoverage: { type: String },
+  treatmentPlan: [{
+    _id: false,
+    session:     Number,
+    description: String,
+    date:        String,
+  }],
+  medicalNotes:    { type: String },
+
   pdfUrl: String,
   shareToken: String,
   status: { type: String, enum: ['draft', 'sent', 'accepted', 'rejected', 'expired'], default: 'draft' },

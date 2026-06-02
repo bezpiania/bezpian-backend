@@ -6,7 +6,8 @@ const orderItemSchema = new mongoose.Schema({
   quantity:    { type: Number, required: true, min: 1 },
   unitPrice:   { type: Number, required: true },
   totalPrice:  { type: Number, required: true },
-  notes:       { type: String },
+  notes:       { type: String },    // restaurant: observaciones por plato (sin cebolla, término medio)
+  variant:     { type: String },    // store: variante elegida (Talla M / Rojo)
 }, { _id: false });
 
 const orderSchema = new mongoose.Schema({
@@ -35,9 +36,18 @@ const orderSchema = new mongoose.Schema({
 
   notes:           { type: String },
 
+  // RESTAURANT
+  deliveryHours:   { type: String },              // horario de delivery si distinto al local
+  isGroupOrder:    { type: Boolean, default: false },
+
+  // STORE
+  trackingCode:    { type: String },              // número de guía de envío
+  returnStatus:    { type: String, enum: ['none', 'requested', 'approved', 'completed'], default: 'none' },
+  returnReason:    { type: String },
+
   status: {
     type: String,
-    enum: ['new', 'preparing', 'on_the_way', 'delivered', 'cancelled'],
+    enum: ['new', 'preparing', 'on_the_way', 'shipped', 'delivered', 'returned', 'cancelled'],
     default: 'new',
   },
 }, { timestamps: true });
