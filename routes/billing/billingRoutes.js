@@ -4,6 +4,7 @@ import BillingController from '../../controllers/billing/billing.controller.js';
 const router = express.Router();
 const billingController = new BillingController();
 
+router.get('/usage/:workspaceId', billingController.getUsage);
 router.get('/plans', billingController.listPlans);
 router.get('/subscription', billingController.getSubscription);
 router.post('/subscribe', billingController.subscribe);

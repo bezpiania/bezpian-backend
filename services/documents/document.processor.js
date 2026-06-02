@@ -1,12 +1,18 @@
 import fs from 'fs';
 import path from 'path';
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import mammoth from 'mammoth';
 import { encodingForModel } from 'js-tiktoken';
 import DocumentChunk from '../../models/DocumentChunk.js';
 import Document from '../../models/Document.js';
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+let pdfjsLib = null;
+const getPdfLib = async () => {
+  if (!pdfjsLib) {
+    pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+  }
+  return pdfjsLib;
+};
 
 const enc = encodingForModel('gpt-3.5-turbo');
 const CHUNK_TOKEN_LIMIT = 500;
@@ -18,7 +24,8 @@ class DocumentProcessor {
    */
   async extractTextFromPDF(filePath) {
     try {
-      const pdf = await pdfjsLib.getDocument(filePath).promise;
+      const pdfjs = await getPdfLib();
+      const pdf = await pdfjs.getDocument(filePath).promise;
       let text = '';
 
       for (let i = 1; i <= pdf.numPages; i++) {

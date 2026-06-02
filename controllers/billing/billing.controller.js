@@ -4,6 +4,52 @@ import { validateRequired, validateMongoId } from '../../middlewares/validation.
 const billingService = new BillingService();
 
 export default class BillingController {
+    getUsage = async (req, res) => {
+        try {
+            const { workspaceId } = req.params;
+            const Chatbot = (await import('../../models/Chatbot.js')).default;
+            const Conversation = (await import('../../models/Conversation.js')).default;
+            const { WorkspaceMember, Workspace } = await import('../../models/index.js');
+
+            const workspace = await Workspace.findById(workspaceId).select('plan name');
+
+            // Month range
+            const now = new Date();
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            const monthEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+            const [chatbots, conversations, members] = await Promise.all([
+                Chatbot.countDocuments({ workspaceId, status: 'active' }),
+                Conversation.countDocuments({ workspaceId, createdAt: { $gte: monthStart, $lte: monthEnd } }),
+                WorkspaceMember.countDocuments({ workspaceId, status: { $ne: 'removed' } }),
+            ]);
+
+            const PLAN_LIMITS = {
+                free:       { conversations: 500,    chatbots: 1,  members: 2 },
+                starter:    { conversations: 1000,   chatbots: 1,  members: 2 },
+                pro:        { conversations: 5000,   chatbots: 3,  members: 10 },
+                enterprise: { conversations: 50000,  chatbots: -1, members: -1 },
+            };
+            const plan   = workspace?.plan || 'free';
+            const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.free;
+
+            return res.json({
+                success: true,
+                data: {
+                    plan,
+                    workspaceName: workspace?.name,
+                    usage: { conversations, chatbots, members },
+                    limits,
+                    periodStart: monthStart,
+                    periodEnd:   monthEnd,
+                },
+            });
+        } catch (error) {
+            console.error('❌ BillingController.getUsage:', error);
+            return res.status(500).json({ success: false, message: 'Error al obtener uso' });
+        }
+    };
+
     listPlans = async (req, res) => {
         try {
             const response = await billingService.listPlans();
