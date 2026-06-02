@@ -1,7 +1,33 @@
 import { Workspace, WorkspaceMember, User } from '../../models/index.js';
 import WorkspaceInvitation from '../../models/WorkspaceInvitation.js';
+import Chatbot from '../../models/Chatbot.js';
+import Conversation from '../../models/Conversation.js';
+import Lead from '../../models/Lead.js';
+import Quote from '../../models/Quote.js';
 
 export default class WorkspaceService {
+    getCounts = async (workspaceId) => {
+        try {
+            const now = new Date();
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+            const [chatbots, conversations, leads, quotes] = await Promise.all([
+                Chatbot.countDocuments({ workspaceId }),
+                Conversation.countDocuments({ workspaceId, createdAt: { $gte: monthStart } }),
+                Lead.countDocuments({ workspaceId, createdAt: { $gte: monthStart } }),
+                Quote.countDocuments({ workspaceId, createdAt: { $gte: monthStart } }),
+            ]);
+
+            return {
+                success: true,
+                data: { chatbots, conversations, leads, quotes },
+            };
+        } catch (error) {
+            console.error('❌ WorkspaceService.getCounts:', error);
+            return { success: false, message: error.message };
+        }
+    };
+
     list = async (userId) => {
         try {
             const members = await WorkspaceMember.find({ userId });

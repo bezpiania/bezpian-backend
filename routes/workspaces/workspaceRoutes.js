@@ -18,6 +18,9 @@ router.get('/:id', requireMember, workspaceController.get);
 router.patch('/:id', requireAdmin, workspaceController.update);
 router.delete('/:id', requireOwner, workspaceController.delete);
 
+// Sidebar counts — single lightweight request
+router.get('/:id/counts', requireMember, workspaceController.getCounts);
+
 // Members — admin to manage, any member to list
 router.get('/:id/members', requireMember, workspaceController.listMembers);
 router.post('/:id/members', requireAdmin, checkMemberLimit, workspaceController.createMember);

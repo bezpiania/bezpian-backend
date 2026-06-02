@@ -87,6 +87,17 @@ export default class WorkspaceController {
         }
     };
 
+    getCounts = async (req, res) => {
+        try {
+            const { id: workspaceId } = req.params;
+            const response = await workspaceService.getCounts(workspaceId);
+            return res.status(response.success ? 200 : 400).json(response);
+        } catch (error) {
+            console.error('❌ WorkspaceController.getCounts:', error);
+            return res.status(500).json({ success: false, message: 'Error al obtener conteos' });
+        }
+    };
+
     listMembers = async (req, res) => {
         try {
             const { userId } = req.user;
