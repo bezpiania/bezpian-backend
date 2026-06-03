@@ -157,6 +157,16 @@ class ChatbotConfigService {
         company.social.telegram && `📱 Telegram: @${company.social.telegram}`
       ].filter(Boolean).join('\n') : '';
 
+      // If chatbot has a customPrompt, use it as the primary base
+      const customPrompt = chatbot?.personality?.customPrompt;
+      if (customPrompt && customPrompt.trim().length > 50) {
+        // Use customPrompt as the full system prompt, then append RAG/delivery/appointment blocks
+        const systemPromptBase = customPrompt;
+        // Still append dynamic blocks for reservations, delivery, etc.
+        const dynamicBlocks = await this._buildDynamicBlocks(chatbot, company, instructions, resources);
+        return systemPromptBase + '\n\n' + dynamicBlocks;
+      }
+
       const systemPrompt = `
 Eres un asistente de ventas de ${company.company.name}.
 TU OBJETIVO: Responder las preguntas del usuario de forma concisa y directa.
@@ -342,6 +352,24 @@ ${instructions.mustNotDo?.inventInfo ? '- Inventar o asumir información - si no
         this.getDefaultInstructions()
       );
     }
+  };
+
+  // Extracts just the dynamic blocks (reservations, delivery, sales) to append to customPrompt
+  _buildDynamicBlocks = async (chatbot, company, instructions, resources) => {
+    const blocks = [];
+    // Appointment block
+    const calEnabled = chatbot?.integrations?.calendar?.enabled;
+    const hasResources = resources?.length > 0;
+    if (calEnabled && hasResources) {
+      const resourceSummary = resources.slice(0, 5).map(r => `  - ${r.name} (cap. ${r.capacity} personas)`).join('\n');
+      blocks.push(`\n📅 RESERVAS:\nDisponemos de mesas para reservar. Recursos: \n${resourceSummary}`);
+    }
+    // Delivery block
+    const d = chatbot?.deliveryConfig;
+    if (d?.enabled) {
+      blocks.push(`\n🚚 DELIVERY/PEDIDOS: Costo Bs.${d.deliveryCost||0}, tiempo ~${d.estimatedMinutes||45}min, mínimo Bs.${d.minimumOrder||0}. Modalidades: ${[d.allowDelivery&&'Delivery',d.allowPickup&&'Retiro'].filter(Boolean).join(' y ')}.`);
+    }
+    return blocks.join('\n');
   };
 
   getDayLabel = (day) => {

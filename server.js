@@ -87,6 +87,43 @@ app.use('/api/invitations', InvitationRoutes);
 // Orders
 app.use('/api/workspaces/:workspaceId/orders', authMiddleware, OrderRoutes);
 
+// Admin: generate embeddings for a chatbot
+app.post('/api/admin/generate-embeddings/:chatbotId', authMiddleware, async (req, res) => {
+    try {
+        const { chatbotId } = req.params;
+        const Chatbot  = (await import('./models/Chatbot.js')).default;
+        const Document = (await import('./models/Document.js')).default;
+        const Product  = (await import('./models/Product.js')).default;
+        const productEmbedding  = (await import('./services/embeddings/product-embedding.service.js')).default;
+        const documentEmbedding = (await import('./services/embeddings/document-embedding.service.js')).default;
+
+        const bot = await Chatbot.findById(chatbotId);
+        if (!bot?.openaiApiKey) return res.status(400).json({ success: false, message: 'API key no configurada' });
+
+        const apiKey = bot.openaiApiKey;
+        let docsEmbedded = 0, prodsEmbedded = 0;
+
+        // Embed documents
+        const docs = await Document.find({ chatbotId });
+        for (const doc of docs) {
+            await documentEmbedding.generateEmbedding(doc, apiKey);
+            docsEmbedded++;
+        }
+
+        // Embed products
+        const products = await Product.find({ chatbotId });
+        for (const prod of products) {
+            await productEmbedding.generateEmbedding(prod, apiKey);
+            prodsEmbedded++;
+        }
+
+        res.json({ success: true, message: `Embeddings generados: ${docsEmbedded} docs, ${prodsEmbedded} productos` });
+    } catch (error) {
+        console.error('Error generating embeddings:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 // Legacy direct routes (para compatibilidad)
 app.use('/api/conversations', authMiddleware, ConversationRoutes);
 app.use('/api/documents', authMiddleware, DocumentRoutes);
