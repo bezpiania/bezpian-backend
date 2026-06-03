@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { getPlanLimits } from '../../config/plans.js';
 import Chatbot from '../../models/Chatbot.js';
 import Conversation from '../../models/Conversation.js';
 import Message from '../../models/Message.js';
@@ -163,9 +164,8 @@ export default class EmbedService {
 
             // Check conversation limit for workspace plan
             const workspace = await Workspace.findById(chatbot.workspaceId).select('plan');
-            const CONV_LIMITS = { free: 500, starter: 1000, pro: 5000, enterprise: -1 };
-            const limit = CONV_LIMITS[workspace?.plan || 'free'];
-            if (limit > 0) {
+            const { conversations: limit } = getPlanLimits(workspace?.plan);
+            if (limit > 0 && limit !== -1) {
                 const now = new Date();
                 const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
                 const count = await Conversation.countDocuments({

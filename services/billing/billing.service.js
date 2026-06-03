@@ -1,6 +1,7 @@
 import { Subscription, Payment, Workspace, WorkspaceMember } from '../../models/index.js';
 import Chatbot from '../../models/Chatbot.js';
 import Conversation from '../../models/Conversation.js';
+import { getPlanLimits } from '../../config/plans.js';
 
 const PLANS = [
     {
@@ -45,15 +46,8 @@ export default class BillingService {
                 WorkspaceMember.countDocuments({ workspaceId, status: { $ne: 'removed' } }),
             ]);
 
-            const LIMITS = {
-                free:       { conversations: 500,   chatbots: 1,  members: 2  },
-                starter:    { conversations: 1000,  chatbots: 1,  members: 2  },
-                pro:        { conversations: 5000,  chatbots: 3,  members: 10 },
-                enterprise: { conversations: 50000, chatbots: -1, members: -1 },
-            };
-
             const plan   = workspace.plan || 'free';
-            const limits = LIMITS[plan] || LIMITS.free;
+            const limits = getPlanLimits(plan);
 
             return {
                 success: true,

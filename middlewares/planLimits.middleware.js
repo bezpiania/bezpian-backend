@@ -1,12 +1,6 @@
 import { Workspace, WorkspaceMember } from '../models/index.js';
 import Chatbot from '../models/Chatbot.js';
-
-const PLAN_LIMITS = {
-    free:       { chatbots: 1,  members: 2  },
-    starter:    { chatbots: 1,  members: 2  },
-    pro:        { chatbots: 3,  members: 10 },
-    enterprise: { chatbots: -1, members: -1 },
-};
+import { getPlanLimits } from '../config/plans.js';
 
 const getWorkspaceId = (req) =>
     req.params.workspaceId || req.params.wsId || req.params.id || req.body?.workspaceId;
@@ -20,7 +14,7 @@ export const checkChatbotLimit = async (req, res, next) => {
         if (!workspaceId) return next();
 
         const workspace = await Workspace.findById(workspaceId).select('plan');
-        const limits = PLAN_LIMITS[workspace?.plan || 'free'];
+        const limits = getPlanLimits(workspace?.plan);
         if (limits.chatbots === -1) return next(); // unlimited
 
         const count = await Chatbot.countDocuments({ workspaceId, status: { $ne: 'deleted' } });
@@ -47,7 +41,7 @@ export const checkMemberLimit = async (req, res, next) => {
         if (!workspaceId) return next();
 
         const workspace = await Workspace.findById(workspaceId).select('plan');
-        const limits = PLAN_LIMITS[workspace?.plan || 'free'];
+        const limits = getPlanLimits(workspace?.plan);
         if (limits.members === -1) return next(); // unlimited
 
         const count = await WorkspaceMember.countDocuments({ workspaceId, status: { $ne: 'removed' } });
