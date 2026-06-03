@@ -84,7 +84,11 @@ export default class AppointmentController {
   get = async (req, res) => {
     try {
       const { id } = req.params;
-      const appointment = await Appointment.findById(id);
+      const { wsId, workspaceId } = req.params;
+      const wsIdValue = wsId || workspaceId;
+      const query = { _id: id };
+      if (wsIdValue) query.workspaceId = wsIdValue;
+      const appointment = await Appointment.findOne(query);
       if (!appointment) return res.status(404).json({ success: false, message: 'Cita no encontrada' });
       res.json({ success: true, data: appointment });
     } catch (error) {

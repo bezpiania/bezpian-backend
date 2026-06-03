@@ -157,8 +157,9 @@ export default class EmbedService {
             const Resource = (await import('../../models/Resource.js')).default;
             const hasResources = await Resource.exists({ chatbotId: chatbot._id, isActive: true });
             const isDineIn = !!tableId;
+            const botDisplayName = chatbot.name || chatbot.personality?.welcomeMessage?.split(' ')[0] || 'nosotros';
             const dineInWelcome = isDineIn && tableName
-                ? `¡Bienvenido a La Rufina! 👋 Estás en **${tableName}**. Puedo tomar tu pedido, mostrarte el menú o pedir la cuenta cuando estés listo. ¿Qué deseas?`
+                ? `¡Bienvenido a ${botDisplayName}! 👋 Estás en **${tableName}**. Puedo tomar tu pedido, mostrarte el menú o pedir la cuenta cuando estés listo. ¿Qué deseas?`
                 : null;
 
             return {

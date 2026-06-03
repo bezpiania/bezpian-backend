@@ -102,9 +102,13 @@ const chatbotSchema = new mongoose.Schema({
   },
 
   openaiSettings: {
-    temperature: { type: Number, default: 0.7, min: 0, max: 2 },
-    maxTokens: { type: Number, default: 500, min: 50, max: 4000 },
-    topP: { type: Number, default: 1, min: 0, max: 1 }
+    temperature:         { type: Number, default: 0.7, min: 0,   max: 2    },
+    maxTokens:           { type: Number, default: 500, min: 50,  max: 4000 },
+    topP:                { type: Number, default: 1,   min: 0,   max: 1    },
+    // RAG tuning — overrides global defaults
+    maxContextTokens:    { type: Number, default: null },  // null = use global default (2000)
+    maxChunks:           { type: Number, default: null },  // null = use global default (5)
+    similarityThreshold: { type: Number, default: null },  // null = use global default (0.5)
   },
 
   productLoadingMethod: {

@@ -15,6 +15,7 @@ let openai = null;
 
 const enc = encodingForModel('gpt-3.5-turbo');
 
+// Global defaults — can be overridden per chatbot via openaiSettings
 const CONFIG = {
   MAX_CONTEXT_TOKENS: 2000,
   MAX_CHUNKS: 5,
@@ -22,6 +23,15 @@ const CONFIG = {
   SIMILARITY_THRESHOLD: 0.5,
   CACHE_TTL: 3600 // 1 hora
 };
+
+// Get config for a specific chatbot, falling back to global defaults
+const getChatbotConfig = (chatbot) => ({
+  MAX_CONTEXT_TOKENS: chatbot?.openaiSettings?.maxContextTokens || CONFIG.MAX_CONTEXT_TOKENS,
+  MAX_CHUNKS:         chatbot?.openaiSettings?.maxChunks        || CONFIG.MAX_CHUNKS,
+  EMBEDDING_MODEL:    CONFIG.EMBEDDING_MODEL,
+  SIMILARITY_THRESHOLD: chatbot?.openaiSettings?.similarityThreshold || CONFIG.SIMILARITY_THRESHOLD,
+  CACHE_TTL:          CONFIG.CACHE_TTL,
+});
 
 export default class AdvancedRAGService {
   constructor() {

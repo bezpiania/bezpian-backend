@@ -8,6 +8,12 @@ const companyInfoSchema = new mongoose.Schema(
       required: true,
       index: true
     },
+    chatbotId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Chatbot',
+      index: true,
+      sparse: true,  // Optional — null = workspace-level config (fallback)
+    },
     company: {
       name: String,
       address: String,

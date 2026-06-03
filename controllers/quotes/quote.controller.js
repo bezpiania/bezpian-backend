@@ -2,6 +2,12 @@ import Quote from '../../models/Quote.js';
 import Chatbot from '../../models/Chatbot.js';
 import crypto from 'crypto';
 
+const getWsId = (req) => req.params.wsId || req.params.workspaceId;
+// Find quote ensuring it belongs to the workspace (prevents cross-tenant access)
+const findQuote = (id, wsId) => wsId
+  ? Quote.findOne({ _id: id, workspaceId: wsId })
+  : Quote.findById(id);
+
 export default class QuoteController {
   create = async (req, res) => {
     try {
@@ -110,12 +116,8 @@ export default class QuoteController {
       const { id } = req.params;
       console.log('🔍 GET quote:', { id, params: req.params });
 
-      const quote = await Quote.findById(id);
-      if (!quote) {
-        console.log('❌ Quote not found:', id);
-        return res.status(404).json({ success: false, message: 'Cotización no encontrada' });
-      }
-      console.log('✅ Quote found:', { quoteNumber: quote.quoteNumber });
+      const quote = await findQuote(id, getWsId(req));
+      if (!quote) return res.status(404).json({ success: false, message: 'Cotización no encontrada' });
       res.json({ success: true, data: quote });
     } catch (error) {
       console.error('Error getting quote:', error);
@@ -126,10 +128,10 @@ export default class QuoteController {
   update = async (req, res) => {
     try {
       const { id } = req.params;
-      const quote = await Quote.findByIdAndUpdate(id, req.body, { new: true });
-      if (!quote) {
-        return res.status(404).json({ success: false, message: 'Cotización no encontrada' });
-      }
+      const wsId = getWsId(req);
+      const query = wsId ? { _id: id, workspaceId: wsId } : { _id: id };
+      const quote = await Quote.findOneAndUpdate(query, req.body, { new: true });
+      if (!quote) return res.status(404).json({ success: false, message: 'Cotización no encontrada' });
       res.json({ success: true, data: quote });
     } catch (error) {
       console.error('Error updating quote:', error);
@@ -140,7 +142,7 @@ export default class QuoteController {
   resend = async (req, res) => {
     try {
       const { id } = req.params;
-      const quote = await Quote.findById(id);
+      const quote = await findQuote(id, getWsId(req));
       if (!quote) {
         return res.status(404).json({ success: false, message: 'Cotización no encontrada' });
       }
@@ -155,7 +157,7 @@ export default class QuoteController {
   getPDF = async (req, res) => {
     try {
       const { id } = req.params;
-      const quote = await Quote.findById(id);
+      const quote = await findQuote(id, getWsId(req));
       if (!quote) {
         return res.status(404).json({ success: false, message: 'Cotización no encontrada' });
       }
@@ -170,7 +172,7 @@ export default class QuoteController {
   getShareLink = async (req, res) => {
     try {
       const { id } = req.params;
-      const quote = await Quote.findById(id);
+      const quote = await findQuote(id, getWsId(req));
       if (!quote) {
         return res.status(404).json({ success: false, message: 'Cotización no encontrada' });
       }
@@ -248,7 +250,7 @@ export default class QuoteController {
   resend = async (req, res) => {
     try {
       const { id } = req.params;
-      const quote = await Quote.findById(id);
+      const quote = await findQuote(id, getWsId(req));
       if (!quote) {
         return res.status(404).json({ success: false, message: 'Cotización no encontrada' });
       }
@@ -268,7 +270,7 @@ export default class QuoteController {
   getPDF = async (req, res) => {
     try {
       const { id } = req.params;
-      const quote = await Quote.findById(id);
+      const quote = await findQuote(id, getWsId(req));
       if (!quote) {
         return res.status(404).json({ success: false, message: 'Cotización no encontrada' });
       }

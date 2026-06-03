@@ -109,14 +109,26 @@ class ChatbotConfigService {
   buildSystemPrompt = async (workspaceId, chatbotId) => {
     try {
       const { data } = await this.getConfig(workspaceId, chatbotId);
-      const company = data.company;
       const instructions = data.instructions;
-      const chatbot = await (await import('../../models/Chatbot.js')).default.findById(chatbotId);
+      const ChatbotModel = (await import('../../models/Chatbot.js')).default;
+      const CompanyInfoModel = (await import('../../models/CompanyInfo.js')).default;
       const Resource = (await import('../../models/Resource.js')).default;
+
+      const chatbot = await ChatbotModel.findById(chatbotId);
       const resources = await Resource.find({ chatbotId, isActive: true });
 
+      // CompanyInfo: chatbot-level first, fallback to workspace-level
+      const companyInfo = await CompanyInfoModel.findOne({ chatbotId })
+        || await CompanyInfoModel.findOne({ workspaceId });
+      const company = companyInfo || data.company;
+
       if (!company || !company.company) {
-        logger.warn('⚠️ Company info not configured for workspace:', workspaceId);
+        logger.warn('⚠️ Company info not configured for chatbot/workspace:', chatbotId, workspaceId);
+        // If chatbot has customPrompt, use it even without company info
+        const customPrompt = chatbot?.personality?.customPrompt;
+        if (customPrompt?.trim().length > 50) {
+          return customPrompt + '\n\n' + await this._buildDynamicBlocks(chatbot, null, instructions, resources);
+        }
         return this.getDefaultSystemPrompt(instructions);
       }
 
