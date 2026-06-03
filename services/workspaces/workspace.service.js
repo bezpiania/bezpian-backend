@@ -6,16 +6,17 @@ import Lead from '../../models/Lead.js';
 import Quote from '../../models/Quote.js';
 
 export default class WorkspaceService {
-    getCounts = async (workspaceId) => {
+    getCounts = async (workspaceId, chatbotId = null) => {
         try {
             const now = new Date();
             const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            const botFilter = chatbotId ? { chatbotId } : {};
 
             const [chatbots, conversations, leads, quotes] = await Promise.all([
                 Chatbot.countDocuments({ workspaceId }),
-                Conversation.countDocuments({ workspaceId, createdAt: { $gte: monthStart } }),
-                Lead.countDocuments({ workspaceId, createdAt: { $gte: monthStart } }),
-                Quote.countDocuments({ workspaceId, createdAt: { $gte: monthStart } }),
+                Conversation.countDocuments({ workspaceId, ...botFilter, createdAt: { $gte: monthStart } }),
+                Lead.countDocuments({ workspaceId, ...botFilter, createdAt: { $gte: monthStart } }),
+                Quote.countDocuments({ workspaceId, ...botFilter, createdAt: { $gte: monthStart } }),
             ]);
 
             return {

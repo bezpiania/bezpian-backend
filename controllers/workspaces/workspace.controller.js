@@ -90,7 +90,8 @@ export default class WorkspaceController {
     getCounts = async (req, res) => {
         try {
             const { id: workspaceId } = req.params;
-            const response = await workspaceService.getCounts(workspaceId);
+            const { chatbotId } = req.query;
+            const response = await workspaceService.getCounts(workspaceId, chatbotId || null);
             return res.status(response.success ? 200 : 400).json(response);
         } catch (error) {
             console.error('❌ WorkspaceController.getCounts:', error);
