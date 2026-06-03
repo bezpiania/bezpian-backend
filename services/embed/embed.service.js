@@ -48,7 +48,7 @@ function buildAppointmentTool(chatbot) {
         type: 'function',
         function: {
             name: 'book_appointment',
-            description: 'Crea una reserva cuando tienes TODOS los datos obligatorios confirmados por el usuario.',
+            description: `Crea una reserva SOLO cuando el cliente haya confirmado EXPLÍCITAMENTE: fecha, hora, número de personas, su nombre real y teléfono. NO uses nombres de ejemplo ni datos inventados. Si falta cualquier dato obligatorio, pregúntalo antes de llamar esta función.`,
             parameters: { type: 'object', properties, required },
         },
     };
@@ -474,24 +474,61 @@ export default class EmbedService {
                         const extraNotes = fields.filter(f => !['name','phone','email'].includes(f.fieldId) && args[f.fieldId])
                             .map(f => `${f.label}: ${args[f.fieldId]}`).join(' | ');
 
-                        appointmentCreated = await Appointment.create({
-                            chatbotId: chatbot._id,
-                            workspaceId: chatbot.workspaceId,
+                        const resolvedName  = getName()  || args.customer_name || '';
+                        const resolvedPhone = getPhone() || args.customer_phone || '';
+                        const resolvedEmail = getEmail() || args.customer_email || '';
+
+                        // Guard: don't confirm without a real name (prevents premature confirmation with placeholders)
+                        const GENERIC_NAMES = ['cliente', 'usuario', 'customer', 'user', 'nombre', 'juan', 'juan perez', 'pedro', 'maria'];
+                        const isPlaceholder = resolvedName && (resolvedName.startsWith('[') || resolvedName.startsWith('{') || resolvedName.toLowerCase().includes('nombre'));
+                        const isGenericName = !resolvedName || isPlaceholder || GENERIC_NAMES.includes(resolvedName.toLowerCase().trim());
+                        if (isGenericName) {
+                            response.content = `Para confirmar la reserva necesito tu nombre completo. ¿Me lo puedes indicar?`;
+                            const guardMsg = await Message.create({ conversationId: conversation._id, chatbotId: chatbot._id, role: 'assistant', content: response.content, createdAt: new Date() });
+                            return { success: true, data: { botMessage: guardMsg } };
+                        }
+
+                        // Guard: prevent duplicate appointments for the same conversation
+                        const existingAppt = await Appointment.findOne({
                             conversationId: conversation._id,
-                            resourceId: best.id,
-                            guestCount: args.guest_count || 1,
+                            status: { $ne: 'cancelled' },
+                        });
+                        if (existingAppt) {
+                            // Update appointment with real name/phone if it had placeholders before
+                            const updates = {};
+                            const needsNameUpdate = !existingAppt.customerName || existingAppt.customerName.startsWith('[') || existingAppt.customerName.toLowerCase().includes('nombre');
+                            const needsPhoneUpdate = !existingAppt.customerPhone || existingAppt.customerPhone.startsWith('[');
+                            if (needsNameUpdate && resolvedName)  updates.customerName  = resolvedName;
+                            if (needsPhoneUpdate && resolvedPhone) updates.customerPhone = resolvedPhone;
+                            if (extraNotes) updates.notes = extraNotes;
+                            if (Object.keys(updates).length) {
+                                await Appointment.updateOne({ _id: existingAppt._id }, { $set: updates });
+                                Object.assign(existingAppt, updates);
+                            }
+                            const confirmedDateStr = existingAppt.scheduledAt.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+                            const displayName = existingAppt.customerName?.startsWith('[') ? '' : existingAppt.customerName;
+                            response.content = `Tu reserva ya está confirmada ✅${displayName ? ` — **${displayName}**` : ''}, el **${confirmedDateStr} a las ${args.time || existingAppt.scheduledAt.toISOString().slice(11,16)}** (${existingAppt.guestCount} personas).${extraNotes ? ` Anotamos: ${extraNotes}.` : ''} ¿Algo más en que pueda ayudarte?`;
+                            const skipMsg = await Message.create({ conversationId: conversation._id, chatbotId: chatbot._id, role: 'assistant', content: response.content, createdAt: new Date() });
+                            return { success: true, data: { botMessage: skipMsg } };
+                        }
+
+                        appointmentCreated = await Appointment.create({
+                            chatbotId:    chatbot._id,
+                            workspaceId:  chatbot.workspaceId,
+                            conversationId: conversation._id,
+                            resourceId:   best.id,
+                            guestCount:   args.guest_count || 1,
                             scheduledAt,
                             durationMinutes: best.durationMinutes || 90,
-                            customerName: getName() || args.customer_name || '',
-                            customerEmail: getEmail() || '',
-                            customerPhone: getPhone() || '',
+                            customerName:  resolvedName,
+                            customerEmail: resolvedEmail,
+                            customerPhone: resolvedPhone,
                             notes: extraNotes || args.notes || '',
                             status: 'scheduled',
                         });
                         await Chatbot.updateOne({ _id: chatbot._id }, { $inc: { 'stats.totalAppointments': 1 } });
-                        // Build confirmation message
                         const confirmedDateStr = scheduledAt.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
-                        response.content = `✅ ¡Reserva confirmada, ${args.customer_name}! Te esperamos el **${confirmedDateStr} a las ${args.time}** (${args.guest_count || 1} ${args.guest_count === 1 ? 'persona' : 'personas'}). Recibirás una confirmación. ¿Hay algo más en lo que pueda ayudarte?`;
+                        response.content = `✅ ¡Reserva confirmada, ${resolvedName}! Te esperamos el **${confirmedDateStr} a las ${args.time}** (${args.guest_count || 1} ${args.guest_count === 1 ? 'persona' : 'personas'}). Recibirás una confirmación. ¿Hay algo más en lo que pueda ayudarte?`;
                     } else {
                         response.content = `Lo siento, ese horario ya no está disponible. ¿Te acomoda otro horario?`;
                     }
