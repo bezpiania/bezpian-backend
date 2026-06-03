@@ -20,6 +20,7 @@ const productSchema = new mongoose.Schema({
   price:       { type: Number, default: 0 },      // 0 = "Consultar"
   currency:    { type: String, default: 'CLP' },
   category:    { type: String },
+  subcategory: { type: String },  // e.g. "Cámaras IP" within "CCTV"
   tags:        [String],
   imageUrl:    { type: String },
   imagePath:   { type: String },
