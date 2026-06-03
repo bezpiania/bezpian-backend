@@ -30,11 +30,24 @@ const orderSchema = new mongoose.Schema({
   customerEmail:   { type: String },
 
   // Delivery
-  deliveryAddress: { type: String, required: true },
+  deliveryAddress: { type: String, default: '' },
   deliveryZone:    { type: String },
   estimatedMinutes:{ type: Number },
 
   notes:           { type: String },
+
+  // Order type
+  orderType: {
+    type: String,
+    enum: ['dine_in', 'delivery', 'pickup'],
+    default: 'delivery',
+  },
+  tableId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Resource' },
+  tableName:   { type: String },
+
+  // Bill request
+  billRequested:   { type: Boolean, default: false },
+  billRequestedAt: { type: Date },
 
   // RESTAURANT
   deliveryHours:   { type: String },              // horario de delivery si distinto al local

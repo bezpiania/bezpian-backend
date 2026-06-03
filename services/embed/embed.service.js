@@ -47,6 +47,21 @@ function buildAppointmentTool(chatbot) {
     };
 }
 
+const REQUEST_BILL_TOOL = {
+    type: 'function',
+    function: {
+        name: 'request_bill',
+        description: 'Solicita la cuenta para la mesa del cliente. Llama esta función cuando el cliente pida la cuenta, el cheque, o quiera pagar.',
+        parameters: {
+            type: 'object',
+            properties: {
+                notes: { type: 'string', description: 'Notas adicionales (ej: pagar con tarjeta, dividir la cuenta)' },
+            },
+            required: [],
+        },
+    },
+};
+
 function buildOrderTool(chatbot) {
     const delivery = chatbot.deliveryConfig || {};
     return {
@@ -92,7 +107,7 @@ export default class EmbedService {
     constructor() {
     }
 
-    startConversation = async (embedKey, visitorId, visitorMetadata = {}) => {
+    startConversation = async (embedKey, visitorId, visitorMetadata = {}, tableId = null) => {
         try {
             const chatbot = await Chatbot.findOne({ embedKey });
             if (!chatbot) {
@@ -120,11 +135,20 @@ export default class EmbedService {
                 }
             }
 
+            // Resolve table info if tableId provided
+            let tableName = null;
+            let resolvedTableId = tableId;
+            if (tableId) {
+                const Resource = (await import('../../models/Resource.js')).default;
+                const table = await Resource.findById(tableId).select('name');
+                tableName = table?.name || null;
+            }
+
             const conversation = new Conversation({
                 chatbotId: chatbot._id,
                 workspaceId: chatbot.workspaceId,
                 visitorId: visitorId || 'anonymous',
-                visitorMetadata: visitorMetadata,
+                visitorMetadata: { ...visitorMetadata, tableId: resolvedTableId, tableName },
                 status: 'active'
             });
 
@@ -132,6 +156,10 @@ export default class EmbedService {
 
             const Resource = (await import('../../models/Resource.js')).default;
             const hasResources = await Resource.exists({ chatbotId: chatbot._id, isActive: true });
+            const isDineIn = !!tableId;
+            const dineInWelcome = isDineIn && tableName
+                ? `¡Bienvenido a La Rufina! 👋 Estás en **${tableName}**. Puedo tomar tu pedido, mostrarte el menú o pedir la cuenta cuando estés listo. ¿Qué deseas?`
+                : null;
 
             return {
                 success: true,
@@ -139,10 +167,14 @@ export default class EmbedService {
                 data: {
                     conversationId: conversation._id,
                     botId: chatbot._id,
-                    welcomeMessage: chatbot.personality?.welcomeMessage || '¡Hola! ¿En qué te puedo ayudar?',
+                    welcomeMessage: dineInWelcome || chatbot.personality?.welcomeMessage || '¡Hola! ¿En qué te puedo ayudar?',
+                    tableId: resolvedTableId,
+                    tableName,
+                    isDineIn,
                     features: {
-                        appointmentsEnabled: !!(chatbot.integrations?.calendar?.enabled && hasResources),
+                        appointmentsEnabled: !!(chatbot.integrations?.calendar?.enabled && hasResources && !isDineIn),
                         quotesEnabled: !!(chatbot.quoteFields?.length > 0),
+                        dineInEnabled: isDineIn,
                     }
                 }
             };
@@ -347,8 +379,10 @@ export default class EmbedService {
             const Resource = (await import('../../models/Resource.js')).default;
             const activeResources = calEnabled ? await Resource.find({ chatbotId: chatbot._id, isActive: true }) : [];
             const appointmentTools = activeResources.length > 0 ? [buildAppointmentTool(chatbot)] : [];
-            const deliveryTools = chatbot.deliveryConfig?.enabled ? [buildOrderTool(chatbot)] : [];
-            const allTools = [...appointmentTools, ...deliveryTools];
+            const isDineIn = !!(conversation.visitorMetadata?.tableId);
+            const deliveryTools = (chatbot.deliveryConfig?.enabled || isDineIn) ? [buildOrderTool(chatbot)] : [];
+            const billTools = isDineIn ? [REQUEST_BILL_TOOL] : [];
+            const allTools = [...appointmentTools, ...deliveryTools, ...billTools];
 
             const response = await openaiService.generateResponse(
                 chatbot,
@@ -429,14 +463,18 @@ export default class EmbedService {
                 try {
                     const args = JSON.parse(response.toolCall.function.arguments);
                     const delivery = chatbot.deliveryConfig || {};
+                    const tableInfo = conversation.visitorMetadata || {};
+                    const isDineInOrder = !!(tableInfo.tableId);
+
                     const items = args.items.map(i => ({
                         name:       i.name,
                         quantity:   i.quantity,
                         unitPrice:  i.unit_price,
                         totalPrice: i.unit_price * i.quantity,
+                        notes:      i.notes || '',
                     }));
                     const subtotal = items.reduce((s, i) => s + i.totalPrice, 0);
-                    const deliveryCost = delivery.deliveryCost || 0;
+                    const deliveryCost = isDineInOrder ? 0 : (delivery.deliveryCost || 0);
                     const total = subtotal + deliveryCost;
 
                     const OrderModel = (await import('../../models/Order.js')).default;
@@ -444,25 +482,64 @@ export default class EmbedService {
                         chatbotId:        chatbot._id,
                         workspaceId:      chatbot.workspaceId,
                         conversationId:   conversation._id,
+                        orderType:        isDineInOrder ? 'dine_in' : (args.delivery_address === 'retiro' ? 'pickup' : 'delivery'),
+                        tableId:          tableInfo.tableId || null,
+                        tableName:        tableInfo.tableName || null,
                         items,
                         subtotal,
                         deliveryCost,
                         total,
-                        customerName:     args.customer_name,
+                        customerName:     args.customer_name || (isDineInOrder ? 'Cliente en mesa' : ''),
                         customerPhone:    args.customer_phone || '',
                         customerEmail:    args.customer_email || '',
-                        deliveryAddress:  args.delivery_address,
+                        deliveryAddress:  isDineInOrder ? `Mesa: ${tableInfo.tableName}` : (args.delivery_address || ''),
                         deliveryZone:     args.delivery_zone || '',
-                        estimatedMinutes: delivery.estimatedMinutes || 45,
+                        estimatedMinutes: delivery.estimatedMinutes || 20,
                         notes:            args.notes || '',
                         status:           'new',
                     });
 
-                    const itemsText = items.map(i => `${i.quantity}× ${i.name}`).join(', ');
-                    response.content = `✅ ¡Pedido confirmado, ${args.customer_name}! 🎉\n\n📦 *Pedido #${order.orderNumber}:* ${itemsText}\n📍 *Dirección:* ${args.delivery_address}\n💰 *Total:* Bs. ${total.toLocaleString()}${deliveryCost > 0 ? ` (incluye Bs. ${deliveryCost} de delivery)` : ''}\n⏱ *Tiempo estimado:* ${delivery.estimatedMinutes || 45} minutos\n\n¡Estamos preparando tu pedido! ¿Hay algo más en que pueda ayudarte?`;
+                    const itemsText = items.map(i => `${i.quantity}× ${i.name}${i.notes ? ` (${i.notes})` : ''}`).join(', ');
+                    if (isDineInOrder) {
+                        response.content = `✅ ¡Tu pedido está registrado! 🎉\n\n📋 **Pedido #${order.orderNumber}:** ${itemsText}\n💰 **Total:** Bs. ${total.toLocaleString()}\n\nEl equipo de cocina ya recibió tu pedido. Cuando quieras pedir algo más o la cuenta, ¡aquí estoy! 😊`;
+                    } else {
+                        const confirmedDateStr = new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+                        response.content = `✅ ¡Pedido confirmado! 🎉\n\n📦 **Pedido #${order.orderNumber}:** ${itemsText}\n📍 **${args.delivery_address}**\n💰 **Total:** Bs. ${total.toLocaleString()}${deliveryCost > 0 ? ` (incluye Bs. ${deliveryCost} delivery)` : ''}\n⏱ **Tiempo estimado:** ${delivery.estimatedMinutes || 45} min\n\n¡Estamos en eso! ¿Algo más?`;
+                    }
                 } catch (fnErr) {
                     logger.error('Error processing create_order tool call', { error: fnErr.message });
                     response.content = `Hubo un problema al registrar tu pedido. Por favor intenta de nuevo.`;
+                }
+            }
+
+            // Handle request_bill tool call
+            if (response.toolCall?.function?.name === 'request_bill') {
+                try {
+                    const args = JSON.parse(response.toolCall.function.arguments || '{}');
+                    const tableInfo = conversation.visitorMetadata || {};
+                    const OrderModel = (await import('../../models/Order.js')).default;
+
+                    // Find all orders for this table in this conversation
+                    const tableOrders = await OrderModel.find({
+                        conversationId: conversation._id,
+                        orderType: 'dine_in',
+                        status: { $nin: ['cancelled'] },
+                    });
+
+                    // Mark bill as requested
+                    await OrderModel.updateMany(
+                        { conversationId: conversation._id, orderType: 'dine_in', billRequested: false },
+                        { billRequested: true, billRequestedAt: new Date() }
+                    );
+
+                    const grandTotal = tableOrders.reduce((s, o) => s + (o.total || 0), 0);
+                    const allItems = tableOrders.flatMap(o => o.items || []);
+                    const itemsSummary = allItems.map(i => `${i.quantity}× ${i.name}: Bs. ${i.totalPrice}`).join('\n');
+
+                    response.content = `🧾 **Cuenta - ${tableInfo.tableName || 'Tu mesa'}**\n\n${itemsSummary || 'Sin ítems registrados'}\n\n**Total: Bs. ${grandTotal.toLocaleString()}**\n\nHemos notificado al equipo para traerte la cuenta. ¡Gracias por visitarnos! 😊`;
+                } catch (fnErr) {
+                    logger.error('Error processing request_bill tool call', { error: fnErr.message });
+                    response.content = `Hubo un problema al procesar tu solicitud. Por favor llama a un mesero.`;
                 }
             }
 

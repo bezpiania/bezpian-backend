@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import crypto from 'crypto';
 
 const timeSlotSchema = new mongoose.Schema({
   time: { type: String, required: true }, // "13:00"
@@ -23,6 +24,9 @@ const resourceSchema = new mongoose.Schema({
   description:        { type: String, trim: true },
   durationMinutes:    { type: Number, default: 60, min: 15 },
   bufferMinutes:      { type: Number, default: 0, min: 0 },
+
+  // QR / table ordering
+  tableToken:   { type: String, unique: true, sparse: true }, // unique token for QR URL
 
   // RESTAURANT — zone type (terraza, interior, barra)
   zoneType:     { type: String, enum: ['interior', 'terraza', 'barra', 'privado', 'any'], default: 'any' },
@@ -52,5 +56,13 @@ const resourceSchema = new mongoose.Schema({
 
 resourceSchema.index({ chatbotId: 1, isActive: 1 });
 resourceSchema.index({ workspaceId: 1 });
+resourceSchema.index({ tableToken: 1 }, { sparse: true });
+
+// Auto-generate tableToken for tables
+resourceSchema.pre('save', function () {
+  if (this.isNew && (this.type === 'table' || this.type === 'room') && !this.tableToken) {
+    this.tableToken = crypto.randomBytes(12).toString('hex');
+  }
+});
 
 export default mongoose.model('Resource', resourceSchema);

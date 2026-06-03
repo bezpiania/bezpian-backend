@@ -5,8 +5,8 @@ const embedService = new EmbedService();
 export default class EmbedController {
     startConversation = async (req, res) => {
         try {
-            const { embedKey, visitorId } = req.body;
-            const response = await embedService.startConversation(embedKey, visitorId);
+            const { embedKey, visitorId, tableId } = req.body;
+            const response = await embedService.startConversation(embedKey, visitorId, {}, tableId || null);
             return res.status(response.success ? 201 : 400).json(response);
         } catch (error) {
             console.error('❌ EmbedController.startConversation:', error);
@@ -104,6 +104,30 @@ export default class EmbedController {
         } catch (error) {
             console.error('❌ EmbedController.getAvailability:', error);
             return res.status(500).json({ success: false, message: 'Error al obtener disponibilidad' });
+        }
+    };
+
+    getTableInfo = async (req, res) => {
+        try {
+            const { tableToken } = req.params;
+            const Resource = (await import('../../models/Resource.js')).default;
+            const Chatbot  = (await import('../../models/Chatbot.js')).default;
+            const resource = await Resource.findOne({ tableToken, isActive: true });
+            if (!resource) return res.status(404).json({ success: false, message: 'Mesa no encontrada' });
+            const chatbot = await Chatbot.findById(resource.chatbotId).select('embedKey name widget');
+            if (!chatbot) return res.status(404).json({ success: false, message: 'Chatbot no encontrado' });
+            return res.json({
+                success: true,
+                data: {
+                    tableId: resource._id,
+                    tableName: resource.name,
+                    embedKey: chatbot.embedKey,
+                    chatbotName: chatbot.name,
+                    widget: chatbot.widget,
+                }
+            });
+        } catch (error) {
+            return res.status(500).json({ success: false, message: error.message });
         }
     };
 

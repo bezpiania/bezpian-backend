@@ -13,6 +13,7 @@ router.post('/quote', rateLimiter.middleware, embedController.requestQuote);
 router.post('/appointment', rateLimiter.middleware, embedController.requestAppointment);
 router.get('/availability', rateLimiter.middleware, embedController.getAvailability);
 router.get('/available-dates', rateLimiter.middleware, embedController.getAvailableDates);
+router.get('/table/:tableToken', rateLimiter.middleware, embedController.getTableInfo);
 router.get('/products', rateLimiter.middleware, embedController.searchProducts);
 router.get('/quote-fields', rateLimiter.middleware, embedController.getQuoteFields);
 
