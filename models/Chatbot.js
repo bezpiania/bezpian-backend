@@ -144,13 +144,17 @@ const chatbotSchema = new mongoose.Schema({
   }],
 
   deliveryConfig: {
-    enabled:          { type: Boolean, default: false },
-    allowDelivery:    { type: Boolean, default: true },
-    allowPickup:      { type: Boolean, default: true },
-    zones:            [{ type: String }],
-    deliveryCost:     { type: Number, default: 0 },
-    estimatedMinutes: { type: Number, default: 45 },
-    minimumOrder:     { type: Number, default: 0 },
+    enabled:            { type: Boolean, default: false },
+    allowDelivery:      { type: Boolean, default: true },
+    allowPickup:        { type: Boolean, default: true },
+    zones:              [{ type: String }],
+    deliveryCost:       { type: Number, default: 0 },
+    estimatedMinutes:   { type: Number, default: 45 },
+    minimumOrder:       { type: Number, default: 0 },
+    // Delivery hours (optional, if different from local hours)
+    hasCustomDeliveryHours: { type: Boolean, default: false },
+    deliveryHoursStart: { type: String, default: '' },
+    deliveryHoursEnd:   { type: String, default: '' },
   },
 
   createdAt: { type: Date, default: Date.now },

@@ -50,6 +50,15 @@ const productSchema = new mongoose.Schema({
   insuranceCoverage: { type: String },            // qué seguros lo cubren
   sessionCount:      { type: Number, default: 1 },// nº de sesiones del tratamiento
 
+  // ── COMBO fields (restaurant) ─────────────────────────────────────────────
+  isCombo:     { type: Boolean, default: false },
+  comboItems:  [{
+    _id: false,
+    name:     { type: String },   // descripción del ítem incluido
+    quantity: { type: Number, default: 1 },
+  }],
+  comboSavings: { type: Number }, // cuánto ahorra vs comprar por separado
+
   // ── Source / sync metadata ────────────────────────────────────────────────
   source: {
     type: String,
