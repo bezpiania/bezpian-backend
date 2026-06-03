@@ -1,5 +1,7 @@
 import CompanyInfo from '../../models/CompanyInfo.js';
 import ChatbotConfig from '../../models/ChatbotConfig.js';
+import Chatbot from '../../models/Chatbot.js';
+import Resource from '../../models/Resource.js';
 import logger from '../../utils/logger.js';
 
 class ChatbotConfigService {
@@ -110,16 +112,12 @@ class ChatbotConfigService {
     try {
       const { data } = await this.getConfig(workspaceId, chatbotId);
       const instructions = data.instructions;
-      const ChatbotModel = (await import('../../models/Chatbot.js')).default;
-      const CompanyInfoModel = (await import('../../models/CompanyInfo.js')).default;
-      const Resource = (await import('../../models/Resource.js')).default;
-
-      const chatbot = await ChatbotModel.findById(chatbotId);
+      const chatbot = await Chatbot.findById(chatbotId);
       const resources = await Resource.find({ chatbotId, isActive: true });
 
       // CompanyInfo: chatbot-level first, fallback to workspace-level
-      const companyInfo = await CompanyInfoModel.findOne({ chatbotId })
-        || await CompanyInfoModel.findOne({ workspaceId });
+      const companyInfo = await CompanyInfo.findOne({ chatbotId })
+        || await CompanyInfo.findOne({ workspaceId });
       const company = companyInfo || data.company;
 
       if (!company || !company.company) {

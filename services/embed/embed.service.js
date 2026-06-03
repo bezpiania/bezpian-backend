@@ -4,11 +4,15 @@ import Message from '../../models/Message.js';
 import Appointment from '../../models/Appointment.js';
 import Lead from '../../models/Lead.js';
 import Quote from '../../models/Quote.js';
+import Order from '../../models/Order.js';
+import Resource from '../../models/Resource.js';
 import CompanyInfo from '../../models/CompanyInfo.js';
+import { Workspace } from '../../models/index.js';
 import openaiService from '../openai/openai.service.js';
 import AdvancedRAGService from '../rag/advanced-rag.service.js';
 import chatbotConfigService from '../config/chatbot-config.service.js';
 import appointmentService from '../appointments/appointment.service.js';
+import { findBestResource } from '../appointments/resource-availability.service.js';
 import socialService from '../messaging/social.service.js';
 import whatsappService from '../messaging/whatsapp.service.js';
 import emailService from '../notifications/email.service.js';
@@ -115,7 +119,6 @@ export default class EmbedService {
             }
 
             // Check conversation limit for workspace plan
-            const { Workspace } = await import('../../models/index.js');
             const workspace = await Workspace.findById(chatbot.workspaceId).select('plan');
             const CONV_LIMITS = { free: 500, starter: 1000, pro: 5000, enterprise: -1 };
             const limit = CONV_LIMITS[workspace?.plan || 'free'];
@@ -139,8 +142,7 @@ export default class EmbedService {
             let tableName = null;
             let resolvedTableId = tableId;
             if (tableId) {
-                const Resource = (await import('../../models/Resource.js')).default;
-                const table = await Resource.findById(tableId).select('name');
+                        const table = await Resource.findById(tableId).select('name');
                 tableName = table?.name || null;
             }
 
@@ -154,7 +156,6 @@ export default class EmbedService {
 
             await conversation.save();
 
-            const Resource = (await import('../../models/Resource.js')).default;
             const hasResources = await Resource.exists({ chatbotId: chatbot._id, isActive: true });
             const isDineIn = !!tableId;
             const botDisplayName = chatbot.name || chatbot.personality?.welcomeMessage?.split(' ')[0] || 'nosotros';
@@ -377,8 +378,7 @@ export default class EmbedService {
             // 11. Llamar OpenAI (con function calling si agendamiento activo)
             const openaiStartTime = Date.now();
             const calEnabled = chatbot.integrations?.calendar?.enabled;
-            const Resource = (await import('../../models/Resource.js')).default;
-            const activeResources = calEnabled ? await Resource.find({ chatbotId: chatbot._id, isActive: true }) : [];
+                        const activeResources = calEnabled ? await Resource.find({ chatbotId: chatbot._id, isActive: true }) : [];
             const appointmentTools = activeResources.length > 0 ? [buildAppointmentTool(chatbot)] : [];
             const isDineIn = !!(conversation.visitorMetadata?.tableId);
             const deliveryTools = (chatbot.deliveryConfig?.enabled || isDineIn) ? [buildOrderTool(chatbot)] : [];
@@ -402,8 +402,7 @@ export default class EmbedService {
             if (response.toolCall?.function?.name === 'book_appointment') {
                 try {
                     const args = JSON.parse(response.toolCall.function.arguments);
-                    const { findBestResource } = await import('../appointments/resourceAvailability.service.js');
-                    const best = await findBestResource(
+                                        const best = await findBestResource(
                         chatbot._id.toString(),
                         args.date,
                         args.time,
@@ -421,8 +420,7 @@ export default class EmbedService {
                                 .toISOString().split('T')[0];
                         }
                         const scheduledAt = new Date(`${dateStr}T${args.time}:00.000Z`);
-                        const Appointment = (await import('../../models/Appointment.js')).default;
-                        // Map custom fields to standard appointment fields
+                                                // Map custom fields to standard appointment fields
                         const fields = chatbot.appointmentFields?.length ? chatbot.appointmentFields : [
                             { fieldId: 'name' }, { fieldId: 'phone' },
                         ];
@@ -478,8 +476,7 @@ export default class EmbedService {
                     const deliveryCost = isDineInOrder ? 0 : (delivery.deliveryCost || 0);
                     const total = subtotal + deliveryCost;
 
-                    const OrderModel = (await import('../../models/Order.js')).default;
-                    const order = await OrderModel.create({
+                                        const order = await Order.create({
                         chatbotId:        chatbot._id,
                         workspaceId:      chatbot.workspaceId,
                         conversationId:   conversation._id,
@@ -518,17 +515,16 @@ export default class EmbedService {
                 try {
                     const args = JSON.parse(response.toolCall.function.arguments || '{}');
                     const tableInfo = conversation.visitorMetadata || {};
-                    const OrderModel = (await import('../../models/Order.js')).default;
-
+        
                     // Find all orders for this table in this conversation
-                    const tableOrders = await OrderModel.find({
+                    const tableOrders = await Order.find({
                         conversationId: conversation._id,
                         orderType: 'dine_in',
                         status: { $nin: ['cancelled'] },
                     });
 
                     // Mark bill as requested
-                    await OrderModel.updateMany(
+                    await Order.updateMany(
                         { conversationId: conversation._id, orderType: 'dine_in', billRequested: false },
                         { billRequested: true, billRequestedAt: new Date() }
                     );
@@ -882,8 +878,7 @@ export default class EmbedService {
 
             // Auto-assign resource if resources exist
             let resourceId = null;
-            const { findBestResource } = await import('../appointments/resourceAvailability.service.js');
-            if (appointmentData.date && appointmentData.time) {
+                        if (appointmentData.date && appointmentData.time) {
                 const best = await findBestResource(
                     conversation.chatbotId.toString(),
                     appointmentData.date,
@@ -1141,4 +1136,74 @@ export default class EmbedService {
             return null;
         }
     };
+
+    // ── Controller-delegated methods ─────────────────────────────────────────
+
+    getSlotsByDate = async ({ embedKey, date, guestCount }) => {
+        try {
+            const chatbot = await Chatbot.findOne({ embedKey });
+            if (!chatbot) return { success: false, message: 'Chatbot no encontrado' };
+            const { getAvailableSlotsForDate } = await import('../appointments/resource-availability.service.js');
+            const slots = await getAvailableSlotsForDate(chatbot._id.toString(), date, parseInt(guestCount) || 1);
+            return { success: true, data: { date, slots } };
+        } catch (error) {
+            return { success: false, message: error.message };
+        }
+    };
+
+    getAvailableDates = async ({ embedKey, guestCount, daysAhead }) => {
+        try {
+            const chatbot = await Chatbot.findOne({ embedKey });
+            if (!chatbot) return { success: false, message: 'Chatbot no encontrado' };
+            const { getAvailableSlotsForDate } = await import('../appointments/resource-availability.service.js');
+            const days = parseInt(daysAhead) || 14;
+            const guests = parseInt(guestCount) || 1;
+            const availableDates = [];
+            for (let i = 0; i < days; i++) {
+                const d = new Date();
+                d.setUTCDate(d.getUTCDate() + i);
+                const dateStr = d.toISOString().split('T')[0];
+                const slots = await getAvailableSlotsForDate(chatbot._id.toString(), dateStr, guests);
+                if (slots.length > 0) availableDates.push(dateStr);
+            }
+            return { success: true, data: { availableDates } };
+        } catch (error) {
+            return { success: false, message: error.message };
+        }
+    };
+
+    getTableInfo = async (tableToken) => {
+        try {
+            const resource = await Resource.findOne({ tableToken, isActive: true });
+            if (!resource) return { success: false, message: 'Mesa no encontrada' };
+            const chatbot = await Chatbot.findById(resource.chatbotId).select('embedKey name widget');
+            if (!chatbot) return { success: false, message: 'Chatbot no encontrado' };
+            return { success: true, data: { tableId: resource._id, tableName: resource.name, embedKey: chatbot.embedKey, chatbotName: chatbot.name, widget: chatbot.widget } };
+        } catch (error) {
+            return { success: false, message: error.message };
+        }
+    };
+
+    getQuoteFields = async (embedKey) => {
+        try {
+            const chatbot = await Chatbot.findOne({ embedKey }).select('quoteFields');
+            if (!chatbot) return { success: false, message: 'Chatbot no encontrado' };
+            return { success: true, data: chatbot.quoteFields || [] };
+        } catch (error) {
+            return { success: false, message: error.message };
+        }
+    };
+
+    getEmbedCode = async (botId) => {
+        try {
+            const chatbot = await Chatbot.findById(botId).select('_id name widget embedKey');
+            if (!chatbot) return { success: false, message: 'Chatbot no encontrado' };
+            const apiUrl = process.env.API_URL || 'http://localhost:5001';
+            const embedCode = `<!-- Zapien Chat Widget -->\n<script src="${apiUrl}/widget.js" data-embed-key="${chatbot.embedKey}" async></script>\n<!-- End Zapien Chat Widget -->`;
+            return { success: true, data: { chatbotId: botId, chatbotName: chatbot.name, embedCode } };
+        } catch (error) {
+            return { success: false, message: error.message };
+        }
+    };
+
 }

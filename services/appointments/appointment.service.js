@@ -270,6 +270,62 @@ class AppointmentService {
       return { success: false, message: error.message };
     }
   }
+
+  list = async (workspaceId, chatbotId) => {
+    try {
+      const query = { workspaceId };
+      if (chatbotId) query.chatbotId = chatbotId;
+      const appointments = await Appointment.find(query).sort({ scheduledAt: -1 });
+      return { success: true, data: { appointments } };
+    } catch (error) {
+      return { success: false, message: error.message };
+    }
+  };
+
+  get = async (workspaceId, id) => {
+    try {
+      const query = { _id: id };
+      if (workspaceId) query.workspaceId = workspaceId;
+      const appointment = await Appointment.findOne(query);
+      if (!appointment) return { success: false, message: 'Cita no encontrada' };
+      return { success: true, data: { appointment } };
+    } catch (error) {
+      return { success: false, message: error.message };
+    }
+  };
+
+  create = async (data) => {
+    try {
+      const appointment = await Appointment.create(data);
+      return { success: true, data: { appointment } };
+    } catch (error) {
+      return { success: false, message: error.message };
+    }
+  };
+
+  updateStatus = async (workspaceId, id, status) => {
+    try {
+      const query = { _id: id };
+      if (workspaceId) query.workspaceId = workspaceId;
+      const appointment = await Appointment.findOneAndUpdate(query, { status }, { new: true });
+      if (!appointment) return { success: false, message: 'Cita no encontrada' };
+      return { success: true, data: { appointment } };
+    } catch (error) {
+      return { success: false, message: error.message };
+    }
+  };
+
+  reschedule = async (workspaceId, id, scheduledAt) => {
+    try {
+      const query = { _id: id };
+      if (workspaceId) query.workspaceId = workspaceId;
+      const appointment = await Appointment.findOneAndUpdate(query, { scheduledAt }, { new: true });
+      if (!appointment) return { success: false, message: 'Cita no encontrada' };
+      return { success: true, data: { appointment }, message: 'Cita reprogramada' };
+    } catch (error) {
+      return { success: false, message: error.message };
+    }
+  };
 }
 
 export default new AppointmentService();
