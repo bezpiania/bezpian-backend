@@ -1,4 +1,5 @@
 import Order from '../../models/Order.js';
+import stockService from '../stock/stock.service.js';
 
 export default class OrderService {
 
@@ -38,6 +39,12 @@ export default class OrderService {
                 { new: true }
             );
             if (!order) return { success: false, message: 'Pedido no encontrado' };
+
+            // Restore stock if order is cancelled (store only)
+            if (status === 'cancelled' && order.items?.length) {
+                setImmediate(() => stockService.restoreOrderStock(order.items));
+            }
+
             return { success: true, data: { order } };
         } catch (error) {
             return { success: false, message: error.message };

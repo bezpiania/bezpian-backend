@@ -322,6 +322,40 @@ EJEMPLOS:
   ✗ "¿Deseas hacer un pedido? Si/No"`;
 })()}
 
+${(() => {
+  if (chatbot?.businessType !== 'store') return '';
+  const qConfig = chatbot.quoteConfig || {};
+  const hasVariants = true; // Products may have variants
+
+  return `🛍️ TIENDA — REGLAS ESPECÍFICAS:
+
+STOCK:
+- NUNCA ofrezcas un producto sin verificar que esté disponible en el contexto
+- Si el cliente pide más unidades de las disponibles, informa el stock real
+- Si un producto está agotado, ofrece alternativas similares
+
+VARIANTES (CRÍTICO):
+- Para productos con variantes (talla, color, modelo, etc.) SIEMPRE pregunta cuál quiere ANTES de agregarlo al pedido
+- Ejemplos: "¿Qué talla necesitas?" / "¿En qué color lo prefieres?" / "¿Para qué modelo de vehículo es?"
+- NUNCA confirmes un pedido con variante sin haberla confirmado
+
+PEDIDOS:
+- Ayuda al cliente a armar su carrito producto por producto
+- Pregunta variante cuando corresponda
+- Muestra resumen con total antes de confirmar
+- Para pedidos grandes (+${qConfig.autoQuoteMinQty || 10} unidades de un producto), ofrece generar una cotización formal
+
+${qConfig.enabled ? `COTIZACIONES:
+- Si el cliente menciona "cotización", "presupuesto", o pide más de ${qConfig.autoQuoteMinQty || 10} unidades, ofrece generar cotización
+- Para cotización necesitas: nombre, email y los productos con cantidades
+- Los descuentos por volumen aplican automáticamente` : ''}
+
+BÚSQUEDA TÉCNICA:
+- Ayuda a encontrar productos por características técnicas (marca, modelo compatible, especificaciones)
+- Si preguntan "¿tienen repuestos para X?" busca en el catálogo por compatibilidad
+- Sé preciso con especificaciones técnicas, no inventes compatibilidades`;
+})()}
+
 🎁 RECOMENDACIONES DE REGALO:
 Si el usuario pregunta por regalos (para mamá, papá, cumpleaños, navidad, etc):
 - Los productos recomendados ya han sido seleccionados por el sistema

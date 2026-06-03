@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import Chatbot from '../../models/Chatbot.js';
 import Conversation from '../../models/Conversation.js';
 import Message from '../../models/Message.js';
@@ -17,6 +18,7 @@ import socialService from '../messaging/social.service.js';
 import whatsappService from '../messaging/whatsapp.service.js';
 import emailService from '../notifications/email.service.js';
 import calendarService from '../calendar/calendar.service.js';
+import stockService from '../stock/stock.service.js';
 import logger from '../../utils/logger.js';
 
 const whatsAppInstance = new whatsappService();
@@ -51,6 +53,37 @@ function buildAppointmentTool(chatbot) {
     };
 }
 
+const GENERATE_QUOTE_TOOL = {
+    type: 'function',
+    function: {
+        name: 'generate_quote',
+        description: 'Genera una cotización formal cuando el cliente quiere una propuesta de precio, pide cotización, o su pedido supera el umbral de volumen configurado. Llama esta función cuando tengas los productos y el email del cliente.',
+        parameters: {
+            type: 'object',
+            properties: {
+                customer_name:  { type: 'string',  description: 'Nombre del cliente o empresa' },
+                customer_email: { type: 'string',  description: 'Email para enviar la cotización (OBLIGATORIO)' },
+                customer_phone: { type: 'string',  description: 'Teléfono (opcional)' },
+                notes:          { type: 'string',  description: 'Notas o condiciones especiales (opcional)' },
+                items: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            name:       { type: 'string',  description: 'Nombre del producto' },
+                            quantity:   { type: 'integer', description: 'Cantidad' },
+                            unit_price: { type: 'number',  description: 'Precio unitario' },
+                            variant:    { type: 'string',  description: 'Variante (opcional)' },
+                        },
+                        required: ['name', 'quantity', 'unit_price'],
+                    },
+                },
+            },
+            required: ['customer_name', 'customer_email', 'items'],
+        },
+    },
+};
+
 const REQUEST_BILL_TOOL = {
     type: 'function',
     function: {
@@ -67,33 +100,43 @@ const REQUEST_BILL_TOOL = {
 };
 
 function buildOrderTool(chatbot) {
-    const delivery = chatbot.deliveryConfig || {};
+    const isStore = chatbot.businessType === 'store';
+    const isDineInContext = false; // Will be evaluated at runtime
+
+    // Item schema — store adds variant field
+    const itemProperties = {
+        name:       { type: 'string',  description: 'Nombre exacto del producto' },
+        quantity:   { type: 'integer', description: 'Cantidad pedida' },
+        unit_price: { type: 'number',  description: 'Precio unitario del producto' },
+        notes:      { type: 'string',  description: 'Observaciones para este ítem (opcional)' },
+        ...(isStore && {
+            variant:    { type: 'string', description: 'Variante elegida (talla, color, modelo, etc.) — OBLIGATORIO si el producto tiene variantes' },
+            product_id: { type: 'string', description: 'ID del producto si está disponible (opcional)' },
+        }),
+    };
+
+    const description = isStore
+        ? 'Crea un pedido cuando el cliente ha confirmado TODOS los productos con sus variantes (talla/color/modelo), nombre y teléfono. Para productos con variantes, SIEMPRE confirma la variante antes de llamar esta función.'
+        : 'Crea un pedido cuando el cliente ha confirmado todos los productos, dirección y datos de contacto.';
+
     return {
         type: 'function',
         function: {
             name: 'create_order',
-            description: `Crea un pedido de delivery cuando el cliente ha confirmado todos los productos, su dirección de entrega y sus datos de contacto. Llama esta función SOLO cuando tengas: al menos un producto con cantidad, nombre del cliente, teléfono y dirección.`,
+            description,
             parameters: {
                 type: 'object',
                 properties: {
-                    customer_name:     { type: 'string', description: 'Nombre completo del cliente' },
-                    customer_phone:    { type: 'string', description: 'Teléfono del cliente' },
-                    customer_email:    { type: 'string', description: 'Email del cliente (opcional)' },
-                    delivery_address:  { type: 'string', description: 'Dirección completa de entrega' },
-                    delivery_zone:     { type: 'string', description: 'Zona o barrio de entrega' },
-                    notes:             { type: 'string', description: 'Notas adicionales del pedido (opcional)' },
+                    customer_name:    { type: 'string', description: 'Nombre completo del cliente' },
+                    customer_phone:   { type: 'string', description: 'Teléfono del cliente' },
+                    customer_email:   { type: 'string', description: 'Email del cliente (opcional)' },
+                    delivery_address: { type: 'string', description: 'Dirección de entrega o "retiro en tienda"' },
+                    delivery_zone:    { type: 'string', description: 'Zona o barrio (opcional)' },
+                    notes:            { type: 'string', description: 'Notas generales del pedido (opcional)' },
                     items: {
                         type: 'array',
                         description: 'Lista de productos pedidos',
-                        items: {
-                            type: 'object',
-                            properties: {
-                                name:       { type: 'string', description: 'Nombre del producto' },
-                                quantity:   { type: 'integer', description: 'Cantidad' },
-                                unit_price: { type: 'number', description: 'Precio unitario' },
-                            },
-                            required: ['name', 'quantity', 'unit_price'],
-                        },
+                        items: { type: 'object', properties: itemProperties, required: ['name', 'quantity', 'unit_price'] },
                     },
                 },
                 required: ['customer_name', 'customer_phone', 'delivery_address', 'items'],
@@ -382,8 +425,9 @@ export default class EmbedService {
             const appointmentTools = activeResources.length > 0 ? [buildAppointmentTool(chatbot)] : [];
             const isDineIn = !!(conversation.visitorMetadata?.tableId);
             const deliveryTools = (chatbot.deliveryConfig?.enabled || isDineIn) ? [buildOrderTool(chatbot)] : [];
-            const billTools = isDineIn ? [REQUEST_BILL_TOOL] : [];
-            const allTools = [...appointmentTools, ...deliveryTools, ...billTools];
+            const billTools     = isDineIn ? [REQUEST_BILL_TOOL] : [];
+            const quoteTools    = (chatbot.businessType === 'store' && chatbot.quoteConfig?.enabled) ? [GENERATE_QUOTE_TOOL] : [];
+            const allTools = [...appointmentTools, ...deliveryTools, ...billTools, ...quoteTools];
 
             const response = await openaiService.generateResponse(
                 chatbot,
@@ -471,7 +515,22 @@ export default class EmbedService {
                         unitPrice:  i.unit_price,
                         totalPrice: i.unit_price * i.quantity,
                         notes:      i.notes || '',
+                        variant:    i.variant || '',
+                        productId:  i.product_id || null,
                     }));
+
+                    // For store: validate stock before confirming order
+                    if (chatbot.businessType === 'store') {
+                        const stockCheck = await stockService.checkOrderStock(items);
+                        if (!stockCheck.valid) {
+                            const issueMsg = stockCheck.issues.map(iss => `• ${iss.message}`).join('\n');
+                            response.content = `Lo siento, hay un problema con tu pedido:\n\n${issueMsg}\n\n¿Deseas ajustar las cantidades?`;
+                            // Early return — skip order creation
+                            const skipMsg = await Message.create({ conversationId: conversation._id, chatbotId: chatbot._id, role: 'assistant', content: response.content, createdAt: new Date() });
+                            return { success: true, data: { botMessage: skipMsg } };
+                        }
+                    }
+
                     const subtotal = items.reduce((s, i) => s + i.totalPrice, 0);
                     const deliveryCost = isDineInOrder ? 0 : (delivery.deliveryCost || 0);
                     const total = subtotal + deliveryCost;
@@ -497,7 +556,12 @@ export default class EmbedService {
                         status:           'new',
                     });
 
-                    const itemsText = items.map(i => `${i.quantity}× ${i.name}${i.notes ? ` (${i.notes})` : ''}`).join(', ');
+                    // Decrement stock for store after order confirmed
+                    if (chatbot.businessType === 'store') {
+                        setImmediate(() => stockService.decrementOrderStock(items));
+                    }
+
+                    const itemsText = items.map(i => `${i.quantity}× ${i.name}${i.variant ? ` [${i.variant}]` : ''}${i.notes ? ` (${i.notes})` : ''}`).join(', ');
                     if (isDineInOrder) {
                         response.content = `✅ ¡Tu pedido está registrado! 🎉\n\n📋 **Pedido #${order.orderNumber}:** ${itemsText}\n💰 **Total:** Bs. ${total.toLocaleString()}\n\nEl equipo de cocina ya recibió tu pedido. Cuando quieras pedir algo más o la cuenta, ¡aquí estoy! 😊`;
                     } else {
@@ -507,6 +571,60 @@ export default class EmbedService {
                 } catch (fnErr) {
                     logger.error('Error processing create_order tool call', { error: fnErr.message });
                     response.content = `Hubo un problema al registrar tu pedido. Por favor intenta de nuevo.`;
+                }
+            }
+
+            // Handle generate_quote tool call (store)
+            if (response.toolCall?.function?.name === 'generate_quote') {
+                try {
+                    const args = JSON.parse(response.toolCall.function.arguments);
+                    const qConfig = chatbot.quoteConfig || {};
+
+                    const items = args.items.map(i => {
+                        // Apply volume discount
+                        const totalQty = i.quantity;
+                        let discountPct = 0;
+                        if (qConfig.volumeDiscounts?.length) {
+                            const tier = [...qConfig.volumeDiscounts]
+                                .sort((a, b) => b.minQty - a.minQty)
+                                .find(d => totalQty >= d.minQty);
+                            if (tier) discountPct = tier.discountPct;
+                        }
+                        const unitPrice = i.unit_price;
+                        const discountedPrice = unitPrice * (1 - discountPct / 100);
+                        return {
+                            description: `${i.name}${i.variant ? ` [${i.variant}]` : ''}`,
+                            quantity:    i.quantity,
+                            unitPrice:   parseFloat(discountedPrice.toFixed(2)),
+                            total:       parseFloat((discountedPrice * i.quantity).toFixed(2)),
+                            discount:    discountPct > 0 ? `${discountPct}% desc.` : null,
+                        };
+                    });
+
+                    const subtotal = items.reduce((s, i) => s + i.total, 0);
+                    const taxAmt   = qConfig.taxRate ? subtotal * (qConfig.taxRate / 100) : 0;
+                    const total    = subtotal + taxAmt;
+
+                    const quote = await Quote.create({
+                        chatbotId:    chatbot._id,
+                        workspaceId:  chatbot.workspaceId,
+                        conversationId: conversation._id,
+                        quoteNumber: `QT-${Date.now()}-${Math.random().toString(36).substr(2,6).toUpperCase()}`,
+                        items,
+                        subtotal: parseFloat(subtotal.toFixed(2)),
+                        tax:      parseFloat(taxAmt.toFixed(2)),
+                        total:    parseFloat(total.toFixed(2)),
+                        currency: 'CLP',
+                        customerData: { name: args.customer_name, email: args.customer_email, phone: args.customer_phone || '' },
+                        shareToken: crypto.randomBytes(16).toString('hex'),
+                        expiresAt: new Date(Date.now() + (qConfig.validityDays || 30) * 86400000),
+                        status: 'draft',
+                    });
+
+                    response.content = `✅ ¡Cotización generada! 📋\n\n**Cotización #${quote.quoteNumber}**\n${items.map(i => `• ${i.quantity}× ${i.description}: $${i.total.toLocaleString()}${i.discount ? ` (${i.discount})` : ''}`).join('\n')}\n\n**Total: $${total.toLocaleString()}**${taxAmt > 0 ? ` (incluye ${qConfig.taxRate}% IVA)` : ''}\nVálida por ${qConfig.validityDays || 30} días.\n\nTe enviaremos la cotización formal a ${args.customer_email}. ¿Tienes alguna pregunta?`;
+                } catch (fnErr) {
+                    logger.error('Error processing generate_quote tool call', { error: fnErr.message });
+                    response.content = `Hubo un problema al generar la cotización. Por favor intenta de nuevo.`;
                 }
             }
 

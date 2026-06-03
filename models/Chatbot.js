@@ -147,6 +147,22 @@ const chatbotSchema = new mongoose.Schema({
     helpText: String,
   }],
 
+  // Store: quote configuration
+  quoteConfig: {
+    enabled:           { type: Boolean, default: false },
+    autoQuoteMinQty:   { type: Number, default: 10 },   // trigger quote offer if qty >= this
+    taxRate:           { type: Number, default: 0 },    // % IVA
+    taxIncluded:       { type: Boolean, default: false },
+    validityDays:      { type: Number, default: 30 },
+    paymentTerms:      { type: String, default: '' },   // "Contado / 30 días / 50% adelanto"
+    termsAndConditions:{ type: String, default: '' },
+    volumeDiscounts: [{
+      _id: false,
+      minQty:      { type: Number, required: true },
+      discountPct: { type: Number, required: true },    // percentage 0-100
+    }],
+  },
+
   deliveryConfig: {
     enabled:            { type: Boolean, default: false },
     allowDelivery:      { type: Boolean, default: true },
