@@ -6,39 +6,34 @@ const chatbotConfigSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Chatbot',
       required: true,
-      unique: true
+      unique: true,
     },
     instructions: {
+      // Identity
+      assistantName:  { type: String, default: '' },      // e.g. "Rafi" — if empty, uses bot name
       tone: {
         type: String,
-        enum: ['formal', 'amigable', 'casual', 'custom'],
-        default: 'amigable'
+        enum: ['amigable', 'profesional', 'casual', 'formal'],
+        default: 'amigable',
       },
-      customToneDescription: String,
-      additionalContext: String,
-      maxProducts: { type: Number, default: 5 },
-      maxDiscount: { type: Number, default: 20 },
-      maxChars: { type: Number, default: 500 },
-      mustDo: {
-        mentionHours: { type: Boolean, default: true },
-        suggestPayment: { type: Boolean, default: true },
-        includeSources: { type: Boolean, default: true }
-      },
-      mustNotDo: {
-        inventInfo: { type: Boolean, default: true },
-        mentionCompetitors: { type: Boolean, default: true }
-      },
-      closingQuestion: {
+      language: {
         type: String,
-        default: '¿En qué más puedo ayudarte?'
+        enum: ['es', 'en', 'auto'],
+        default: 'auto',                                  // auto = respond in client's language
       },
-      mustInclude: {
-        sources: { type: Boolean, default: true },
-        hours: { type: Boolean, default: true },
-        payments: { type: Boolean, default: true },
-        dispatch: { type: Boolean, default: true }
-      }
-    }
+
+      // Messages
+      welcomeMessage:  { type: String, default: '' },
+      fallbackMessage: { type: String, default: '' },
+      closingQuestion: { type: String, default: '¿En qué más puedo ayudarte?' },
+
+      // Rules — structured as list items, not free text
+      customRules:   [{ type: String }],                  // things the bot SHOULD do
+      restrictions:  [{ type: String }],                  // things the bot should NOT do
+
+      // Legacy fields kept for backward compat
+      maxProducts: { type: Number, default: 5 },
+    },
   },
   { timestamps: true }
 );

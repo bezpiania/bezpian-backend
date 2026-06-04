@@ -115,292 +115,155 @@ class ChatbotConfigService {
   buildSystemPrompt = async (workspaceId, chatbotId) => {
     try {
       const { data } = await this.getConfig(workspaceId, chatbotId);
-      const instructions = data.instructions;
+      const instructions = data.instructions || this.getDefaultInstructions();
       const chatbot = await Chatbot.findById(chatbotId);
       const resources = await Resource.find({ chatbotId, isActive: true });
 
-      // CompanyInfo: chatbot-level first, fallback to workspace-level
-      const companyInfo = await CompanyInfo.findOne({ chatbotId })
+      // CompanyInfo: always by chatbotId first
+      const company = await CompanyInfo.findOne({ chatbotId })
         || await CompanyInfo.findOne({ workspaceId });
-      const company = companyInfo || data.company;
 
-      if (!company || !company.company) {
-        logger.warn('⚠️ Company info not configured for chatbot/workspace:', chatbotId, workspaceId);
-        // If chatbot has customPrompt, use it even without company info
-        const customPrompt = chatbot?.personality?.customPrompt;
-        if (customPrompt?.trim().length > 50) {
-          return customPrompt + '\n\n' + await this._buildDynamicBlocks(chatbot, null, instructions, resources);
-        }
-        return this.getDefaultSystemPrompt(instructions);
-      }
+      // ── 1. IDENTITY ──────────────────────────────────────────────────────
+      const botName = instructions.assistantName || chatbot?.name || 'Asistente';
+      const companyName = company?.company?.name || chatbot?.name || 'la empresa';
+      const toneMap = {
+        amigable:    'Cálido, cercano y empático. Usas emojis con moderación.',
+        profesional: 'Profesional y confiable. Lenguaje formal pero accesible.',
+        casual:      'Relajado y conversacional, como un amigo que ayuda.',
+        formal:      'Formal y corporativo. Sin emojis. Trato de usted.',
+      };
+      const toneDesc = toneMap[instructions.tone] || toneMap.amigable;
+      const langInstr = instructions.language === 'es'
+        ? 'Siempre responde en español.'
+        : instructions.language === 'en'
+        ? 'Always respond in English.'
+        : 'Responde en el idioma que use el cliente.';
 
-      // Construir horarios desde el array de días
-      const hoursText = company.operationHours && Array.isArray(company.operationHours) && company.operationHours.length > 0
-        ? company.operationHours
-            .filter(h => !h.isClosed)
-            .map(h => `- ${this.getDayLabel(h.day)}: ${h.open} - ${h.close}`)
-            .join('\n')
-        : 'No especificado';
+      // ── 2. COMPANY DATA ──────────────────────────────────────────────────
+      const c = company?.company || {};
+      const hours = company?.operationHours?.filter(h => !h.isClosed)
+        .map(h => `${this.getDayLabel(h.day)}: ${h.open}–${h.close}`).join(' | ') || 'No especificado';
+      const social = company?.social ? [
+        company.social.instagram && `Instagram: @${company.social.instagram}`,
+        company.social.facebook  && `Facebook: ${company.social.facebook}`,
+        company.social.whatsapp  && `WhatsApp: ${company.social.whatsapp}`,
+        company.social.youtube   && `YouTube: ${company.social.youtube}`,
+      ].filter(Boolean).join(' | ') : '';
+      const payments = company?.payments ? [
+        company.payments.creditCard  && 'Tarjeta crédito/débito',
+        company.payments.transfer    && 'Transferencia bancaria',
+        company.payments.cash        && 'Efectivo',
+        company.payments.webpay      && 'Webpay',
+        company.payments.mercadopago && 'Mercado Pago',
+        company.payments.maquinaPos  && 'POS',
+      ].filter(Boolean).join(', ') : '';
 
-      // Construir formas de pago
-      const paymentMethods = company.payments ? [
-        company.payments.creditCard && '✓ Tarjeta de Crédito',
-        company.payments.transfer && '✓ Transferencia Bancaria',
-        company.payments.paypal && '✓ PayPal',
-        company.payments.cash && '✓ Efectivo contra Entrega',
-        company.payments.webpay && '✓ Webpay',
-        company.payments.flow && '✓ Flow',
-        company.payments.mercadopago && '✓ Mercado Pago',
-        company.payments.maquinaPos && '✓ Máquina POS'
-      ].filter(Boolean).join('\n') : 'No especificado';
+      // ── 3. CUSTOM RULES ──────────────────────────────────────────────────
+      const customRulesText = instructions.customRules?.length
+        ? instructions.customRules.map(r => `- ${r}`).join('\n')
+        : '';
+      const restrictionsText = instructions.restrictions?.length
+        ? instructions.restrictions.map(r => `- ${r}`).join('\n')
+        : '';
 
-      // Construir despachos
-      const dispatchText = company.dispatches?.available
-        ? `✓ Sí, realizamos despachos${company.dispatches.specialCases ? `\n  Casos especiales: ${company.dispatches.specialCases}` : ''}`
-        : '✗ No realizamos despachos';
+      // ── 4. APPOINTMENT FIELDS ────────────────────────────────────────────
+      const apptFields = chatbot?.appointmentFields || [];
+      const requiredApptFields = apptFields.filter(f => f.required === true);
 
-      // Construir redes sociales
-      const socialText = company.social ? [
-        company.social.instagram && `📱 Instagram: @${company.social.instagram}`,
-        company.social.facebook && `📱 Facebook: ${company.social.facebook}`,
-        company.social.tiktok && `📱 TikTok: @${company.social.tiktok}`,
-        company.social.whatsapp && `📱 WhatsApp: ${company.social.whatsapp}`,
-        company.social.linkedin && `📱 LinkedIn: ${company.social.linkedin}`,
-        company.social.youtube && `📱 YouTube: ${company.social.youtube}`,
-        company.social.twitter && `📱 Twitter: @${company.social.twitter}`,
-        company.social.telegram && `📱 Telegram: @${company.social.telegram}`
-      ].filter(Boolean).join('\n') : '';
+      // ── 5. BUILD PROMPT ──────────────────────────────────────────────────
+      let prompt = `Eres ${botName}, el asistente IA de ${companyName}.
 
-      // If chatbot has a customPrompt, use it as the primary base
-      const customPrompt = chatbot?.personality?.customPrompt;
-      if (customPrompt && customPrompt.trim().length > 50) {
-        // Use customPrompt as the full system prompt, then append RAG/delivery/appointment blocks
-        const systemPromptBase = customPrompt;
-        // Still append dynamic blocks for reservations, delivery, etc.
-        const dynamicBlocks = await this._buildDynamicBlocks(chatbot, company, instructions, resources);
-        return systemPromptBase + '\n\n' + dynamicBlocks;
-      }
+🎭 TONO Y ESTILO:
+${toneDesc}
+${langInstr}
 
-      const systemPrompt = `
-Eres un asistente de ventas de ${company.company.name}.
-TU OBJETIVO: Responder las preguntas del usuario de forma concisa y directa.
-
-${instructions.additionalContext ? `INFORMACIÓN ADICIONAL:\n${instructions.additionalContext}\n\n` : ''}
 📍 INFORMACIÓN DE LA EMPRESA:
-- Empresa: ${company.company.name}
-- Dirección: ${company.company.address}${company.company.city ? ', ' + company.company.city : ''}${company.company.country ? ', ' + company.company.country : ''}
-- Teléfono: ${company.company.phone}
-- Email: ${company.company.email}
-${company.company.website ? `- Sitio Web: ${company.company.website}` : ''}
+- Nombre: ${companyName}
+${c.address ? `- Dirección: ${c.address}` : ''}
+${c.phone   ? `- Teléfono: ${c.phone}` : ''}
+${c.email   ? `- Email: ${c.email}` : ''}
+${c.website ? `- Web: ${c.website}` : ''}
+${social    ? `- Redes: ${social}` : ''}
 
 🕐 HORARIOS DE ATENCIÓN:
-${hoursText}
+${hours}
 
-📦 DESPACHOS / ENTREGAS:
-${dispatchText}
+${payments ? `💳 FORMAS DE PAGO: ${payments}` : ''}`;
 
-💳 FORMAS DE PAGO DISPONIBLES:
-${paymentMethods}
+      // Company description if available
+      if (c.description) {
+        prompt += `\n\n📌 SOBRE NOSOTROS:\n${c.description}`;
+      }
 
-${socialText ? `🌐 REDES SOCIALES:
-${socialText}
+      // Custom rules
+      if (customRulesText) {
+        prompt += `\n\n✅ REGLAS ADICIONALES:\n${customRulesText}`;
+      }
+      if (restrictionsText) {
+        prompt += `\n\n❌ NO HACER:\n${restrictionsText}`;
+      } else {
+        prompt += `\n\n❌ NO HACER:\n- Inventar información que no está en este prompt\n- Si no tienes el dato, di: "Para más info contáctanos al ${c.phone || '[teléfono]'}"`;
+      }
 
-` : ''}🎭 TONO Y ESTILO:
-- Tono: ${instructions.tone === 'custom' ? instructions.customToneDescription : this.getToneDescription(instructions.tone)}
+      // Closing question
+      const closing = instructions.closingQuestion || '¿En qué más puedo ayudarte?';
+      prompt += `\n\nSIEMPRE termina con: "${closing}"`;
 
-⚙️ LÍMITES:
-- Máximo ${instructions.maxProducts} productos por pregunta
-- Máximo descuento permitido: ${instructions.maxDiscount}%
-- Máximo ${instructions.maxChars} caracteres por respuesta
+      // ── APPOINTMENTS BLOCK ───────────────────────────────────────────────
+      const calEnabled = chatbot?.integrations?.calendar?.enabled === true;
+      if (calEnabled && resources.length > 0) {
+        const resourceSummary = resources.slice(0, 8).map(r => {
+          const days = ['mon','tue','wed','thu','fri','sat','sun']
+            .filter(d => r.schedule?.[d]?.enabled && r.schedule[d].slots?.length)
+            .map(d => ({'mon':'Lunes','tue':'Martes','wed':'Miércoles','thu':'Jueves','fri':'Viernes','sat':'Sábado','sun':'Domingo'})[d]);
+          const slots = ['mon','tue','wed','thu','fri','sat','sun']
+            .flatMap(d => r.schedule?.[d]?.enabled ? (r.schedule[d].slots||[]).map(s => s.time) : [])
+            .filter((v,i,a) => a.indexOf(v)===i).slice(0,5).join(', ');
+          return `  - ${r.name} (cap.${r.capacity})${days.length ? ': '+days.join(', ') : ''}${slots ? ' — '+slots : ''}`;
+        }).join('\n');
 
-✅ GUÍA INTELIGENTE (incluir cuando sea RELEVANTE):
-- Incluye contacto/teléfono cuando el usuario lo pueda necesitar
-- Menciona horarios si habla sobre disponibilidad o atención
-- Sugiere métodos de pago solo si habla de compra/precio
-- Ofrece despacho si pregunta por envío o entregas
-- Termina siempre con: "${instructions.closingQuestion || '¿En qué más puedo ayudarte?'}"
-${instructions.mustDo?.includeSources ? '- Incluye fuentes de información cuando menciones datos específicos\n' : ''}
+        const reqFields = requiredApptFields.map(f => `- ${f.label} (OBLIGATORIO)`).join('\n');
+        const optFields = apptFields.filter(f => !f.required).map(f => `- ${f.label} (opcional)`).join('\n');
 
-💡 COTIZACIONES (HUMANIZADO E INTELIGENTE):
-CUANDO OFRECER: Solo si el usuario ha mostrado interés concreto (preguntó cantidad, variante específica, o precio total)
-CÓMO OFRECER: De forma natural, conversacional, NO como formulario:
-  ✓ "Perfecto, 5 unidades son $17.500. Si necesitas un presupuesto formal, ¿cuál es tu email?"
-  ✓ "Dale, te preparo la cotización. ¿A qué email te la envío?"
-  ✗ "¿Quieres que genere una cotización? Si/No"
-TONO: Como si estuvieras ayudando a un cliente real, no como un bot
+        prompt += `\n\n📅 RESERVAS:
+RECURSOS: \n${resourceSummary}
+DATOS A RECOPILAR: \n${reqFields}\n${optFields}
+FLUJO: Pregunta personas → muestra slots → recoge datos → muestra resumen → espera SÍ → llama book_appointment`;
+      } else if (!calEnabled) {
+        prompt += `\n\n📅 RESERVAS: No gestionamos reservas por este canal.`;
+      }
 
-📋 DATOS NECESARIOS PARA COTIZACIÓN:
-${chatbot && chatbot.quoteFields && chatbot.quoteFields.length > 0
-  ? chatbot.quoteFields
-      .sort((a, b) => a.order - b.order)
-      .map(f => `- ${f.label}${f.required ? ' (OBLIGATORIO)' : ''}${f.helpText ? ': ' + f.helpText : ''}`)
-      .join('\n')
-  : '- Email (OBLIGATORIO)\n- Nombre (OBLIGATORIO)'}
-IMPORTANTE: Cuando ofrezcas cotización, pide NATURALMENTE estos datos en la conversación. No hagas un formulario. Solo pide los que falten basándote en lo que ya has capturado.
-NUNCA PREGUNTES: Cotización si no hay cantidad/precio en la conversación
+      // ── DELIVERY BLOCK ───────────────────────────────────────────────────
+      const d = chatbot?.deliveryConfig;
+      if (d?.enabled) {
+        const modes = [d.allowDelivery && 'Delivery', d.allowPickup && 'Retiro en local'].filter(Boolean).join(' y ');
+        prompt += `\n\n🚚 DELIVERY:
+Modalidades: ${modes}
+${d.allowDelivery ? `Costo: ${d.deliveryCost || 0} | Tiempo: ~${d.estimatedMinutes || 45} min | Mínimo: ${d.minimumOrder || 0}` : ''}
+${d.zones?.length ? `Zonas: ${d.zones.join(', ')}` : ''}
+FLUJO: Pregunta retiro o delivery → arma pedido → pregunta observación por plato → resumen → create_order`;
+      } else if (d !== undefined) {
+        prompt += `\n\n🚚 DELIVERY: No ofrecemos delivery por el momento.`;
+      }
 
-${(() => {
-  const cal = chatbot?.integrations?.calendar;
-  const calEnabled = cal?.enabled === true;
-  const hasResources = resources && resources.length > 0;
+      // ── STORE BLOCK ──────────────────────────────────────────────────────
+      if (chatbot?.businessType === 'store') {
+        const qc = chatbot.quoteConfig || {};
+        prompt += `\n\n🛍️ TIENDA:
+- Para productos con variantes (talla/color/modelo) SIEMPRE pregunta la variante antes de agregar al pedido
+- Si el producto está agotado, ofrece alternativas
+${qc.enabled ? `- Para +${qc.autoQuoteMinQty||10} unidades ofrece cotización formal` : ''}
+- Búsqueda técnica: ayuda a encontrar por marca, modelo compatible, especificaciones`;
+      }
 
-  if (!calEnabled) {
-    return `📅 AGENDAMIENTO / RESERVAS:
-No gestionamos reservas ni citas. Si el usuario menciona "reserva", "mesa", "cita", "agendar", responde: "Por el momento no gestionamos reservas. Para más información contáctanos directamente."`;
-  }
+      return prompt.trim();
 
-  if (!hasResources) {
-    return `📅 AGENDAMIENTO / RESERVAS:
-El agendamiento está activado pero aún no hay recursos configurados (mesas, especialistas, etc). Si el usuario pregunta por reservas, responde: "Puedes coordinar una reserva contactándonos directamente al ${company.company?.phone || '[teléfono]'} o a ${company.company?.email || '[email]'}."`;
-  }
-
-  const resourceSummary = resources.map(r => {
-    const activeDays = ['mon','tue','wed','thu','fri','sat','sun']
-      .filter(d => r.schedule?.[d]?.enabled && r.schedule[d].slots?.length > 0)
-      .map(d => ({ mon:'Lunes',tue:'Martes',wed:'Miércoles',thu:'Jueves',fri:'Viernes',sat:'Sábado',sun:'Domingo' })[d]);
-    const sampleSlots = ['mon','tue','wed','thu','fri','sat','sun']
-      .flatMap(d => r.schedule?.[d]?.enabled ? (r.schedule[d].slots || []).map(s => s.time) : [])
-      .filter((v, i, a) => a.indexOf(v) === i).slice(0, 5).join(', ');
-    return `  - ${r.name} (cap. ${r.capacity} personas)${activeDays.length ? `: ${activeDays.join(', ')}` : ''}${sampleSlots ? ` — slots: ${sampleSlots}` : ''}`;
-  }).join('\n');
-
-  const apptFields = chatbot.appointmentFields?.length ? chatbot.appointmentFields : [
-    { fieldId: 'name', label: 'Nombre', required: true },
-    { fieldId: 'phone', label: 'Teléfono', required: true },
-  ];
-  const requiredFields = apptFields.filter(f => f.required).map(f => `- ${f.label} (OBLIGATORIO)`).join('\n');
-  const optionalFields = apptFields.filter(f => !f.required).map(f => `- ${f.label}${f.helpText ? ': ' + f.helpText : ''} (opcional)`).join('\n');
-  const allFieldsText = [requiredFields, optionalFields].filter(Boolean).join('\n');
-
-  return `📅 RESERVAS:
-CUANDO ACTUAR: Cuando el usuario mencione "reserva", "mesa", "disponibilidad", "agendar", o quiera venir a comer/visitar.
-
-RECURSOS DISPONIBLES:
-${resourceSummary}
-
-DATOS QUE DEBES RECOPILAR ANTES DE CONFIRMAR:
-${allFieldsText}
-
-FLUJO OBLIGATORIO — sé cálido y conversacional:
-1. Pregunta cuántas personas son (si no lo menciona)
-2. Informa los días y horarios disponibles
-3. El usuario elige fecha y hora
-4. Recopila los datos de forma natural, uno o dos a la vez (NO hagas un formulario)
-5. Una vez que tengas TODOS los datos obligatorios → llama book_appointment
-IMPORTANTE: NUNCA confirmes sin tener todos los campos obligatorios. NUNCA uses "Usuario" como nombre.
-
-EJEMPLOS:
-  ✓ "¡Con gusto! Tenemos mesas los martes y miércoles a las 12:00, 13:00 y 14:00. ¿Para cuántas personas y qué día te acomoda?"
-  ✓ "Perfecto, el martes a las 13:00. ¿Me das tu nombre y teléfono para confirmar?"
-  ✗ "Completa el formulario." / "¿Deseas reservar? Si/No"`;
-
-})()}
-
-${(() => {
-  const d = chatbot?.deliveryConfig;
-  if (!d?.enabled) return `🚚 DELIVERY: No ofrecemos servicio de delivery por el momento.`;
-  const zonesText = d.zones?.length ? d.zones.join(', ') : 'consultar disponibilidad';
-  return `🚚 DELIVERY / PEDIDOS A DOMICILIO:
-CUANDO ACTUAR: Cuando el cliente quiera pedir a domicilio, preguntar por delivery, o armar un pedido.
-ZONAS DE DESPACHO: ${zonesText}
-COSTO DE DESPACHO: Bs. ${d.deliveryCost || 0}
-TIEMPO ESTIMADO: ${d.estimatedMinutes || 45} minutos
-${d.minimumOrder > 0 ? `PEDIDO MÍNIMO: Bs. ${d.minimumOrder}` : ''}
-
-MODALIDADES DISPONIBLES: ${[d.allowDelivery && 'Delivery a domicilio', d.allowPickup && 'Retiro en local'].filter(Boolean).join(' y ')}
-
-FLUJO OBLIGATORIO — sé cálido y conversacional:
-${(d.allowDelivery && d.allowPickup) ? `1. **PRIMERO** pregunta si el pedido es para RETIRO EN LOCAL o DELIVERY A DOMICILIO` : d.allowDelivery ? `1. Solo ofreces DELIVERY A DOMICILIO` : `1. Solo ofreces RETIRO EN LOCAL`}
-${d.allowPickup ? `- Si es RETIRO: no cobres despacho. Pide nombre, teléfono y el local de retiro` : ''}
-${d.allowDelivery ? `- Si es DELIVERY: informa costo Bs. ${d.deliveryCost || 0} y tiempo ~${d.estimatedMinutes || 45} min${d.deliveryHoursStart ? `. Horario de delivery: ${d.deliveryHoursStart} - ${d.deliveryHoursEnd}` : ''}. Pide nombre, teléfono y dirección` : ''}
-2. Ayuda al cliente a armar su pedido producto por producto
-3. **Por cada producto que el cliente pida, pregunta si tiene alguna observación** (ej: "¿alguna observación para el Pique Macho? Sin cebolla, término de cocción, etc."). Si no tiene observaciones, continúa con el siguiente.
-4. Una vez armado el pedido, muestra el resumen con observaciones incluidas: subtotal + despacho + total
-5. Con todos los datos confirmados → llama create_order (incluye las observaciones en el campo notes de cada item)
-IMPORTANTE: NUNCA confirmes sin nombre y teléfono. SIEMPRE pregunta observaciones por plato.
-
-EJEMPLOS:
-  ✓ "¡Perfecto! 1 Pique Macho. ¿Alguna observación para este plato? (sin locoto, término medio, etc.)"
-  ✓ "Anotado: 1 Pique Macho sin locoto. ¿Algo más?"
-  ✓ "Tu pedido: 1 Pique Macho sin locoto + 1 Trucha andina. Total Bs. 280 + Bs. 15 delivery = Bs. 295. ¿Tu nombre y teléfono?"
-  ✗ "¿Deseas hacer un pedido? Si/No"`;
-})()}
-
-${(() => {
-  if (chatbot?.businessType !== 'store') return '';
-  const qConfig = chatbot.quoteConfig || {};
-  const hasVariants = true; // Products may have variants
-
-  return `🛍️ TIENDA — REGLAS ESPECÍFICAS:
-
-STOCK:
-- NUNCA ofrezcas un producto sin verificar que esté disponible en el contexto
-- Si el cliente pide más unidades de las disponibles, informa el stock real
-- Si un producto está agotado, ofrece alternativas similares
-
-VARIANTES (CRÍTICO):
-- Para productos con variantes (talla, color, modelo, etc.) SIEMPRE pregunta cuál quiere ANTES de agregarlo al pedido
-- Ejemplos: "¿Qué talla necesitas?" / "¿En qué color lo prefieres?" / "¿Para qué modelo de vehículo es?"
-- NUNCA confirmes un pedido con variante sin haberla confirmado
-
-PEDIDOS:
-- Ayuda al cliente a armar su carrito producto por producto
-- Pregunta variante cuando corresponda
-- Muestra resumen con total antes de confirmar
-- Para pedidos grandes (+${qConfig.autoQuoteMinQty || 10} unidades de un producto), ofrece generar una cotización formal
-
-${qConfig.enabled ? `COTIZACIONES:
-- Si el cliente menciona "cotización", "presupuesto", o pide más de ${qConfig.autoQuoteMinQty || 10} unidades, ofrece generar cotización
-- Para cotización necesitas: nombre, email y los productos con cantidades
-- Los descuentos por volumen aplican automáticamente` : ''}
-
-BÚSQUEDA TÉCNICA:
-- Ayuda a encontrar productos por características técnicas (marca, modelo compatible, especificaciones)
-- Si preguntan "¿tienen repuestos para X?" busca en el catálogo por compatibilidad
-- Sé preciso con especificaciones técnicas, no inventes compatibilidades`;
-})()}
-
-🎁 RECOMENDACIONES DE REGALO:
-Si el usuario pregunta por regalos (para mamá, papá, cumpleaños, navidad, etc):
-- Los productos recomendados ya han sido seleccionados por el sistema
-- Preséntalos como recomendaciones personalizadas, no como catálogo
-- Explica POR QUÉ cada producto es un buen regalo
-- Sugiere combinaciones si es relevante
-- Mantén un tono cálido y personal
-
-Ejemplos:
-✓ "Para mamá te recomiendo [Producto] porque es perfecto para que cuide su salud..."
-✓ "¿Y si lo combinas con [Otro Producto]? Harían un regalo más completo"
-✓ "Tengo [X] opciones hermosas para mamá, ¿cuál te interesa?"
-✗ "Aquí están los productos para regalo" (impersonal)
-✗ "¿Quieres ver regalos?" (genérico)
-
-❌ NUNCA:
-${instructions.mustNotDo?.inventInfo ? '- Inventar o asumir información - si no está explícito arriba, NO lo digas\n' : ''}${instructions.mustNotDo?.mentionCompetitors ? '- Mencionar a la competencia\n' : ''}
-- Hablar de servicios no listados (estacionamientos, cafetería, wifi, etc)
-- Asumir características del local que no están en la información
-- Forzar cotización antes de que el usuario mencione cantidad o precio
-
-📋 ESTRUCTURA:
-1. Responder DIRECTAMENTE lo que pregunta
-2. Agregar información contextual RELEVANTE (contacto si lo van a necesitar, horarios si es pertinente, etc)
-3. Mantén respuestas concisas - sé breve
-4. Termina con pregunta de cierre
-
-⚠️ MUY IMPORTANTE - Si no tienes información exacta:
-- NO inventes detalles (estacionamientos, servicios, características)
-- Di: "No tengo información sobre eso. Te puedo pasar el contacto directo: [teléfono/email]"
-- Ofrece contacto directo para que el cliente pregunte directamente
-`;
-
-      return systemPrompt.trim();
     } catch (error) {
       logger.error('Error building system prompt:', error);
-      return this.getDefaultSystemPrompt(
-        this.getDefaultInstructions()
-      );
+      return this.getDefaultSystemPrompt(this.getDefaultInstructions());
     }
   };
+
 
   // Extracts just the dynamic blocks (reservations, delivery, sales) to append to customPrompt
   _buildDynamicBlocks = async (chatbot, company, instructions, resources) => {
