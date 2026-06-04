@@ -199,10 +199,13 @@ ${payments ? `💳 FORMAS DE PAGO: ${payments}` : ''}`;
       if (customRulesText) {
         prompt += `\n\n✅ REGLAS ADICIONALES:\n${customRulesText}`;
       }
+      // Universal anti-hallucination rule always added
+      const antiHallucination = `- REGLA CRÍTICA: Si alguien pregunta por algo que NO está explícitamente en este prompt (estacionamiento, wifi, capacidad, servicios especiales, etc.), NUNCA respondas afirmativamente ni inventes. Responde: "No tengo esa información. Te recomiendo consultar directamente al ${c.phone || '[teléfono]'}"`;
+
       if (restrictionsText) {
-        prompt += `\n\n❌ NO HACER:\n${restrictionsText}`;
+        prompt += `\n\n❌ NO HACER:\n${restrictionsText}\n${antiHallucination}`;
       } else {
-        prompt += `\n\n❌ NO HACER:\n- Inventar información que no está en este prompt\n- Si no tienes el dato, di: "Para más info contáctanos al ${c.phone || '[teléfono]'}"`;
+        prompt += `\n\n❌ NO HACER:\n- Inventar información que no está en este prompt\n${antiHallucination}`;
       }
 
       // Closing question
