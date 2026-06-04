@@ -10,7 +10,11 @@ class ChatbotConfigService {
    */
   getConfig = async (workspaceId, chatbotId) => {
     try {
-      const company = await CompanyInfo.findOne({ workspaceId });
+      // Always look by chatbotId first — each bot has its own CompanyInfo
+      // Falls back to workspaceId only if no chatbot-specific record exists
+      const company = chatbotId
+        ? (await CompanyInfo.findOne({ chatbotId }) || await CompanyInfo.findOne({ workspaceId, chatbotId: null }))
+        : await CompanyInfo.findOne({ workspaceId });
       const config = await ChatbotConfig.findOne({ chatbotId });
 
       return {
@@ -29,14 +33,14 @@ class ChatbotConfigService {
   /**
    * Guardar información de empresa
    */
-  saveCompanyInfo = async (workspaceId, companyData) => {
+  saveCompanyInfo = async (workspaceId, companyData, chatbotId = null) => {
     try {
-      // companyData contiene: { company: {...}, operationHours: [...], operationHoursDisplay: [...], dispatches: {...}, payments: {...}, social: {...}, additionalInfo: [...] }
-      // Guardamos todo directamente
+      const filter = chatbotId ? { chatbotId } : { workspaceId, chatbotId: null };
       const company = await CompanyInfo.findOneAndUpdate(
-        { workspaceId },
+        filter,
         {
           workspaceId,
+          chatbotId: chatbotId || undefined,
           company: companyData.company || {},
           operationHours: companyData.operationHours || [],
           operationHoursDisplay: companyData.operationHoursDisplay || [],

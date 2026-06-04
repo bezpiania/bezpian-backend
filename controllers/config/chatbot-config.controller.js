@@ -46,7 +46,7 @@ class ChatbotConfigController {
 
       // Guardar información de empresa
       if (company) {
-        await ChatbotConfigService.saveCompanyInfo(workspaceId, company);
+        await ChatbotConfigService.saveCompanyInfo(workspaceId, company, chatbotId);
       }
 
       // Guardar instrucciones
