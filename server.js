@@ -42,9 +42,16 @@ const app = express();
 
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').filter(o => o.trim());
 
+// Public embed endpoints — allow any origin (including file:// = null origin)
+const publicCors = cors({ origin: '*', credentials: false });
+app.use('/api/embed', publicCors);
+
+// Admin/private endpoints — restricted origins
 app.use(cors({
     origin: (origin, callback) => {
-        if (!origin) return callback(null, true);
+        // Allow requests with no origin (server-to-server, curl)
+        // AND allow 'null' origin (file:// HTML files opened locally)
+        if (!origin || origin === 'null') return callback(null, true);
         if (allowedOrigins.length === 0 || allowedOrigins.includes(origin)) return callback(null, true);
         return callback(new Error('CORS bloqueado'), false);
     },
