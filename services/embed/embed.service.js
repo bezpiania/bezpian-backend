@@ -1349,6 +1349,24 @@ export default class EmbedService {
         }
     };
 
+    getBotInfo = async (embedKey) => {
+        try {
+            const chatbot = await Chatbot.findOne({ embedKey }).select('name widget businessType personality.welcomeMessage');
+            if (!chatbot) return { success: false, message: 'Chatbot no encontrado' };
+            return {
+                success: true,
+                data: {
+                    name:         chatbot.name,
+                    businessType: chatbot.businessType || 'generic',
+                    widget:       chatbot.widget || {},
+                    welcomeMessage: chatbot.personality?.welcomeMessage || '',
+                },
+            };
+        } catch (error) {
+            return { success: false, message: error.message };
+        }
+    };
+
     getEmbedCode = async (botId) => {
         try {
             const chatbot = await Chatbot.findById(botId).select('_id name widget embedKey');

@@ -16,5 +16,6 @@ router.get('/available-dates', rateLimiter.middleware, embedController.getAvaila
 router.get('/table/:tableToken', rateLimiter.middleware, embedController.getTableInfo);
 router.get('/products', rateLimiter.middleware, embedController.searchProducts);
 router.get('/quote-fields', rateLimiter.middleware, embedController.getQuoteFields);
+router.get('/bot-info',    rateLimiter.middleware, embedController.getBotInfo);
 
 export default router;

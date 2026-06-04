@@ -77,6 +77,16 @@ export default class EmbedController {
         }
     };
 
+    getBotInfo = async (req, res) => {
+        try {
+            const { embedKey } = req.query;
+            const response = await embedService.getBotInfo(embedKey);
+            return res.status(response.success ? 200 : 404).json(response);
+        } catch (error) {
+            return res.status(500).json({ success: false, message: error.message });
+        }
+    };
+
     getTableInfo = async (req, res) => {
         try {
             const response = await embedService.getTableInfo(req.params.tableToken);
