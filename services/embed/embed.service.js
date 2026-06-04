@@ -488,6 +488,25 @@ export default class EmbedService {
                             return { success: true, data: { botMessage: guardMsg } };
                         }
 
+                        // Guard: phone is required
+                        const phoneIsPlaceholder = resolvedPhone && (resolvedPhone.startsWith('[') || resolvedPhone.includes('teléfono'));
+                        if (!resolvedPhone || phoneIsPlaceholder) {
+                            response.content = `Perfecto, ${resolvedName}. Para completar la reserva necesito tu número de teléfono. ¿Me lo puedes indicar?`;
+                            const phoneMsg = await Message.create({ conversationId: conversation._id, chatbotId: chatbot._id, role: 'assistant', content: response.content, createdAt: new Date() });
+                            return { success: true, data: { botMessage: phoneMsg } };
+                        }
+
+                        // Guard: show summary and require explicit confirmation
+                        // Check if the last user message is a confirmation (sí, si, ok, confirmo, etc.)
+                        const lastUserMsg = (history[0]?.content || '').toLowerCase().trim();
+                        const isConfirmation = /^(s[íi]|si|ok|yes|confirmo|confirmado|adelante|dale|correcto|listo|perfecto|bien|bueno|claro|va|vamos)$/i.test(lastUserMsg);
+                        if (!isConfirmation) {
+                            const confirmedDateStr2 = new Date(`${dateStr}T${args.time}:00.000Z`).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+                            response.content = `Perfecto, te confirmo los datos:\n\n📅 *${confirmedDateStr2.charAt(0).toUpperCase() + confirmedDateStr2.slice(1)}* a las *${args.time}*\n👥 *${args.guest_count || 1} persona${(args.guest_count || 1) !== 1 ? 's' : ''}*\n👤 *${resolvedName}*\n📞 *${resolvedPhone}*\n\n¿Todo correcto? Responde **SÍ** para confirmar.`;
+                            const summaryMsg = await Message.create({ conversationId: conversation._id, chatbotId: chatbot._id, role: 'assistant', content: response.content, createdAt: new Date() });
+                            return { success: true, data: { botMessage: summaryMsg } };
+                        }
+
                         // Guard: prevent duplicate appointments for the same conversation
                         const existingAppt = await Appointment.findOne({
                             conversationId: conversation._id,
