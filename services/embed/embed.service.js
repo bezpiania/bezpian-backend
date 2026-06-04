@@ -465,35 +465,32 @@ export default class EmbedService {
                         }
                         const scheduledAt = new Date(`${dateStr}T${args.time}:00.000Z`);
                                                 // Map custom fields to standard appointment fields
-                        const fields = chatbot.appointmentFields?.length ? chatbot.appointmentFields : [
-                            { fieldId: 'name' }, { fieldId: 'phone' },
-                        ];
-                        const getName = () => fields.find(f => f.fieldId === 'name') ? args['name'] : args['customer_name'];
-                        const getPhone = () => fields.find(f => f.fieldId === 'phone') ? args['phone'] : args['customer_phone'];
-                        const getEmail = () => fields.find(f => f.fieldId === 'email') ? args['email'] : args['customer_email'];
-                        const extraNotes = fields.filter(f => !['name','phone','email'].includes(f.fieldId) && args[f.fieldId])
+                        // Use chatbot's configured fields — no hardcoded defaults
+                        const fields = chatbot.appointmentFields || [];
+                        const extraNotes = fields.filter(f => args[f.fieldId])
                             .map(f => `${f.label}: ${args[f.fieldId]}`).join(' | ');
 
-                        // Build resolved values map from args using fieldId as key
+                        // Build resolved values map: fieldId → value from args
                         const resolvedValues = {};
                         for (const f of fields) {
                             resolvedValues[f.fieldId] = args[f.fieldId] || args[`customer_${f.fieldId}`] || '';
                         }
-                        // Keep backward-compat aliases
-                        const resolvedName  = resolvedValues['name']  || args.customer_name  || '';
-                        const resolvedPhone = resolvedValues['phone'] || args.customer_phone || '';
-                        const resolvedEmail = resolvedValues['email'] || args.customer_email || '';
+                        // Convenience aliases for fields commonly used elsewhere in the code
+                        const resolvedName  = resolvedValues['name']  || '';
+                        const resolvedPhone = resolvedValues['phone'] || '';
+                        const resolvedEmail = resolvedValues['email'] || '';
 
-                        // Helper: detect placeholder values (AI-invented data)
-                        const isPlaceholderValue = (v) => !v || v.startsWith('[') || v.startsWith('{') || v.toLowerCase().includes('nombre') || v.toLowerCase().includes('teléfono') || v.toLowerCase().includes('telefono');
+                        // Detect AI-invented placeholder values — only bracket/brace patterns
+                        const isPlaceholderValue = (v) => !v || v.trim() === '' || /^\[.+\]$/.test(v.trim()) || /^\{.+\}$/.test(v.trim());
 
                         // Dynamic guard: check ALL required fields from chatbot config
-                        const requiredFields = fields.filter(f => f.required !== false);
+                        const requiredFields = fields.filter(f => f.required === true);
                         for (const f of requiredFields) {
-                            const val = resolvedValues[f.fieldId] || (f.fieldId === 'name' ? resolvedName : f.fieldId === 'phone' ? resolvedPhone : '');
-                            if (!val || isPlaceholderValue(val)) {
-                                const alreadyHasName = resolvedName && !isPlaceholderValue(resolvedName);
-                                const prefix = alreadyHasName ? `Perfecto, ${resolvedName}. ` : '';
+                            const val = resolvedValues[f.fieldId] || '';
+                            if (isPlaceholderValue(val)) {
+                                const nameField = fields.find(fd => fd.fieldId === 'name');
+                                const nameVal = nameField ? resolvedValues['name'] : '';
+                                const prefix = nameVal && !isPlaceholderValue(nameVal) ? `Perfecto, ${nameVal}. ` : '';
                                 response.content = `${prefix}Para confirmar la reserva necesito tu ${f.label.toLowerCase()}. ¿Me lo puedes indicar?`;
                                 const missingMsg = await Message.create({ conversationId: conversation._id, chatbotId: chatbot._id, role: 'assistant', content: response.content, createdAt: new Date() });
                                 return { success: true, data: { botMessage: missingMsg } };
@@ -501,17 +498,15 @@ export default class EmbedService {
                         }
 
                         // Guard: show summary and require explicit confirmation
-                        const lastUserMsg = (history[0]?.content || '').toLowerCase().trim();
-                        const isConfirmation = /^(s[íi]|si|ok|yes|confirmo|confirmado|adelante|dale|correcto|listo|perfecto|bien|bueno|claro|va|vamos)$/i.test(lastUserMsg);
+                        // Detect confirmation from last user message — any affirmative short response
+                        const lastUserMsg = (history[0]?.content || '').trim();
+                        const isConfirmation = lastUserMsg.length <= 30 && /\b(s[íi]|si|ok|yes|confirm|correcto|listo|dale|claro|va|bien|adelante|perfecto)\b/i.test(lastUserMsg);
                         if (!isConfirmation) {
                             const confirmedDateStr2 = new Date(`${dateStr}T${args.time}:00.000Z`).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
-                            // Build dynamic summary from all required fields
-                            const fieldSummary = requiredFields.map(f => {
-                                const val = resolvedValues[f.fieldId] || (f.fieldId === 'name' ? resolvedName : f.fieldId === 'phone' ? resolvedPhone : f.fieldId === 'email' ? resolvedEmail : '');
-                                const icon = f.fieldId === 'name' ? '👤' : f.fieldId === 'phone' ? '📞' : f.fieldId === 'email' ? '📧' : '📝';
-                                return `${icon} *${f.label}:* ${val}`;
-                            }).join('\n');
-                            response.content = `Perfecto, te confirmo los datos de tu reserva:\n\n📅 *${confirmedDateStr2.charAt(0).toUpperCase() + confirmedDateStr2.slice(1)}* a las *${args.time}*\n👥 *${args.guest_count || 1} persona${(args.guest_count || 1) !== 1 ? 's' : ''}*\n${fieldSummary}\n\n¿Todo correcto? Responde **SÍ** para confirmar.`;
+                            // Build summary dynamically from all fields that have a value
+                            const fieldSummary = fields.filter(f => resolvedValues[f.fieldId] && !isPlaceholderValue(resolvedValues[f.fieldId]))
+                                .map(f => `• *${f.label}:* ${resolvedValues[f.fieldId]}`).join('\n');
+                            response.content = `Perfecto, te confirmo los datos de tu reserva:\n\n📅 *${confirmedDateStr2.charAt(0).toUpperCase() + confirmedDateStr2.slice(1)}* a las *${args.time}*\n👥 *${args.guest_count || 1} persona${(args.guest_count || 1) !== 1 ? 's' : ''}*\n${fieldSummary}\n\n¿Todo correcto? Confirma para reservar.`;
                             const summaryMsg = await Message.create({ conversationId: conversation._id, chatbotId: chatbot._id, role: 'assistant', content: response.content, createdAt: new Date() });
                             return { success: true, data: { botMessage: summaryMsg } };
                         }
