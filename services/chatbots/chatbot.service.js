@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { Chatbot, Conversation, Message, Lead, Appointment, Quote } from '../../models/index.js';
+import CompanyInfo from '../../models/CompanyInfo.js';
 
 export default class ChatbotService {
     list = async (workspaceId) => {
@@ -63,6 +64,14 @@ export default class ChatbotService {
             });
 
             await chatbot.save();
+
+            // Automatically create an empty CompanyInfo for this chatbot
+            // Each chatbot has its own isolated company info — no sharing between bots
+            await CompanyInfo.create({
+                workspaceId,
+                chatbotId: chatbot._id,
+                company: { name: chatbotData.botName },
+            });
 
             console.log('✅ Chatbot saved with:', {
                 id: chatbot._id,
