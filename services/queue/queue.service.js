@@ -31,10 +31,7 @@ const integrationSyncQueue = new Queue('integration-sync', {
 });
 
 integrationSyncQueue.on('error', (err) => {
-  // Silenciar errores de conexión en desarrollo
-  if (process.env.NODE_ENV !== 'production') {
-    return;
-  }
+  if (!process.env.REDIS_URL) return; // Redis opcional — sin URL, ignorar errores
   console.error('Queue error:', err);
 });
 
