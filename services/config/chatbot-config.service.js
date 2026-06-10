@@ -195,6 +195,18 @@ ${payments ? `💳 FORMAS DE PAGO: ${payments}` : ''}`;
         prompt += `\n\n📌 SOBRE NOSOTROS:\n${c.description}`;
       }
 
+      // Additional info / FAQ
+      const additionalInfo = company?.additionalInfo || [];
+      if (additionalInfo.length > 0) {
+        const faqText = additionalInfo
+          .filter(item => item.question && item.answer)
+          .map(item => `P: ${item.question}\nR: ${item.answer}`)
+          .join('\n\n');
+        if (faqText) {
+          prompt += `\n\n📚 INFORMACIÓN ADICIONAL Y PREGUNTAS FRECUENTES:\n${faqText}`;
+        }
+      }
+
       // Custom rules
       if (customRulesText) {
         prompt += `\n\n✅ REGLAS ADICIONALES:\n${customRulesText}`;
@@ -228,10 +240,19 @@ ${payments ? `💳 FORMAS DE PAGO: ${payments}` : ''}`;
         const reqFields = requiredApptFields.map(f => `- ${f.label} (OBLIGATORIO)`).join('\n');
         const optFields = apptFields.filter(f => !f.required).map(f => `- ${f.label} (opcional)`).join('\n');
 
+        // Build per-resource availability summary for natural language queries
+        const availabilitySummary = resources.slice(0, 8).map(r => {
+          const DAY_MAP = {'mon':'lunes','tue':'martes','wed':'miércoles','thu':'jueves','fri':'viernes','sat':'sábado','sun':'domingo'};
+          const workDays = ['mon','tue','wed','thu','fri','sat','sun'].filter(d => r.schedule?.[d]?.enabled && r.schedule[d].slots?.length).map(d => DAY_MAP[d]);
+          const offDays  = ['mon','tue','wed','thu','fri','sat','sun'].filter(d => !r.schedule?.[d]?.enabled || !r.schedule[d].slots?.length).map(d => DAY_MAP[d]);
+          return `  • ${r.name}: trabaja ${workDays.join(', ')}. NO trabaja ${offDays.join(', ')}.`;
+        }).join('\n');
+
         prompt += `\n\n📅 RESERVAS:
+DISPONIBILIDAD POR ESPECIALISTA:\n${availabilitySummary}
 RECURSOS: \n${resourceSummary}
 DATOS A RECOPILAR: \n${reqFields}\n${optFields}
-FLUJO: Pregunta personas → muestra slots → recoge datos → muestra resumen → espera SÍ → llama book_appointment`;
+FLUJO: Pregunta qué servicio desea → pregunta con qué especialista → pregunta fecha y hora → pide nombre y teléfono → muestra resumen → espera SÍ → llama book_appointment`;
       } else if (!calEnabled) {
         prompt += `\n\n📅 RESERVAS: No gestionamos reservas por este canal.`;
       }

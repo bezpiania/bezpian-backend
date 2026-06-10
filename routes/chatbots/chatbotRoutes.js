@@ -7,8 +7,10 @@ import ConfigRoutes from '../config.routes.js';
 import LeadsRoutes from './leads.routes.js';
 import QuotesRoutes from './quotes.routes.js';
 import AppointmentsRoutes from './appointments.routes.js';
+import WoocommerceRoutes from '../integrations/woocommerceRoutes.js';
 import { requireAdmin, requireMember } from '../../middlewares/role.middleware.js';
 import { checkChatbotLimit } from '../../middlewares/planLimits.middleware.js';
+import { requireFeature } from '../../middlewares/requireFeature.middleware.js';
 
 const router = express.Router({ mergeParams: true });
 const chatbotController = new ChatbotController();
@@ -36,7 +38,8 @@ router.use('/:id/conversations', requireMember, ConversationRoutes);
 router.use('/:id/products', requireMember, ProductRoutes);
 router.use('/:id/config', requireMember, ConfigRoutes);
 router.use('/:id/leads', requireMember, LeadsRoutes);
-router.use('/:id/quotes', requireMember, QuotesRoutes);
-router.use('/:id/appointments', requireMember, AppointmentsRoutes);
+router.use('/:id/quotes', requireMember, requireFeature('quotes'), QuotesRoutes);
+router.use('/:id/appointments', requireMember, requireFeature('appointments'), AppointmentsRoutes);
+router.use('/:id/woocommerce', requireAdmin, WoocommerceRoutes);
 
 export default router;

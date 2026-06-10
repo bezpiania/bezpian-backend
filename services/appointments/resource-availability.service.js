@@ -82,10 +82,22 @@ export async function getAvailableSlotsForDate(chatbotId, date, guestCount = 1) 
  * @param {number} guestCount
  * @returns {Resource|null}
  */
-export async function findBestResource(chatbotId, date, time, guestCount = 1) {
+export async function findBestResource(chatbotId, date, time, guestCount = 1, preferredName = null) {
   const slots = await getAvailableSlotsForDate(chatbotId, date, guestCount);
   const slot = slots.find(s => s.time === time);
   if (!slot || !slot.resources.length) return null;
+
+  // If client requested a specific specialist, try to find them first
+  if (preferredName) {
+    const normalized = preferredName.toLowerCase().trim();
+    const preferred = slot.resources.find(r =>
+      r.name.toLowerCase().includes(normalized) ||
+      normalized.includes(r.name.toLowerCase().split(' ')[0])
+    );
+    if (preferred) return preferred;
+    // Requested specialist not available at this slot — return null so the bot informs the client
+    return null;
+  }
 
   // Best fit: smallest capacity that fits the group
   const sorted = slot.resources.sort((a, b) => a.capacity - b.capacity);

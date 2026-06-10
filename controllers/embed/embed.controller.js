@@ -17,11 +17,11 @@ export default class EmbedController {
 
     sendMessage = async (req, res) => {
         try {
-            const { conversationId, content, botId } = req.body;
+            const { conversationId, content, botId, visitorContext } = req.body;
             if (!conversationId || !content || !botId) {
                 return res.status(400).json({ success: false, message: 'conversationId, content y botId son requeridos' });
             }
-            const response = await embedService.sendMessage(conversationId, content, botId);
+            const response = await embedService.sendMessage(conversationId, content, botId, visitorContext || {});
             return res.status(response.success ? 200 : 400).json(response);
         } catch (error) {
             console.error('❌ EmbedController.sendMessage:', error);

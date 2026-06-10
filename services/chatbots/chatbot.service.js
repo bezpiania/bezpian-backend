@@ -165,8 +165,19 @@ export default class ChatbotService {
             const avatar = widget.avatar || '🤖';
             const position = widget.position || 'bottom-right';
 
-            const embedCode = `<!-- Zapien Chat Widget -->
+            const embedCode = `<!-- Bezpian Chat Widget -->
 <div id="zapien-chat-${chatbotId}"></div>
+<script>
+  // Configura el contexto del usuario aquí (opcional)
+  // El bot usará esta información para personalizar sus respuestas.
+  window.BezpianUser = {
+    isLoggedIn: false,       // true / false
+    // name:    '',          // nombre del usuario
+    // email:   '',          // email del usuario
+    // role:    '',          // rol o plan (ej: 'premium', 'free', 'admin')
+    // custom:  {}           // cualquier dato adicional
+  };
+</script>
 <script>
   (function() {
     const chatbotId = '${chatbotId}';
@@ -193,7 +204,7 @@ export default class ChatbotService {
         window.addEventListener('message', function(event) {
             if (event.origin !== baseUrl) return;
 
-            // Iframe reports ready
+            // Iframe reports ready — pass user context
             if (event.data.type === 'zapien-chat-ready') {
                 iframe.contentWindow.postMessage({
                     type: 'zapien-init',
@@ -202,7 +213,8 @@ export default class ChatbotService {
                     apiUrl: apiUrl,
                     color: chatConfig.color,
                     avatar: chatConfig.avatar,
-                    chatbotName: chatConfig.chatbotName
+                    chatbotName: chatConfig.chatbotName,
+                    visitorContext: window.BezpianUser || {}
                 }, '*');
             }
 
@@ -225,7 +237,7 @@ export default class ChatbotService {
         });
   })();
 </script>
-<!-- End Zapien Chat Widget -->`;
+<!-- End Bezpian Chat Widget -->`;
 
             return { success: true, message: 'Embed code obtenido', data: { embedCode, chatbotId, chatbotName: chatbot.name, apiUrl, baseUrl } };
         } catch (error) {

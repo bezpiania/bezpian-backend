@@ -8,7 +8,7 @@ const embedController = new EmbedController();
 // Public endpoints (validados por embedKey, sin auth)
 router.post('/conversations', rateLimiter.middleware, embedController.startConversation);
 router.post('/messages', rateLimiter.middleware, embedController.sendMessage);
-router.post('/lead', rateLimiter.middleware, embedController.captureLead);
+// router.post('/lead', rateLimiter.middleware, embedController.captureLead); // leads desactivado temporalmente
 router.post('/quote', rateLimiter.middleware, embedController.requestQuote);
 router.post('/appointment', rateLimiter.middleware, embedController.requestAppointment);
 router.get('/availability', rateLimiter.middleware, embedController.getAvailability);

@@ -32,9 +32,10 @@ function buildAppointmentTool(chatbot) {
     ];
 
     const properties = {
-        date: { type: 'string', description: 'Fecha en formato YYYY-MM-DD' },
-        time: { type: 'string', description: 'Hora en formato HH:MM (24h)' },
-        guest_count: { type: 'integer', description: 'Número de personas' },
+        date:              { type: 'string',  description: 'Fecha en formato YYYY-MM-DD' },
+        time:              { type: 'string',  description: 'Hora en formato HH:MM (24h)' },
+        guest_count:       { type: 'integer', description: 'Número de personas' },
+        preferred_resource:{ type: 'string',  description: 'Nombre del especialista/recurso preferido por el cliente (si lo mencionó)' },
     };
     const required = ['date', 'time', 'guest_count'];
 
@@ -229,7 +230,7 @@ export default class EmbedService {
         }
     };
 
-    sendMessage = async (conversationId, content, botId) => {
+    sendMessage = async (conversationId, content, botId, visitorContext = {}) => {
         const startTime = Date.now();
         try {
             // 1. Validaciones iniciales
@@ -293,22 +294,23 @@ export default class EmbedService {
                 createdAt: new Date()
             });
 
-            // 3.5. Procesar automáticamente para detectar y guardar leads
-            const LeadServiceClass = (await import('./../../services/leads/lead.service.js')).default;
-            const leadService = new LeadServiceClass();
-            const leadProcessResult = await leadService.processMessageForLead(
-                conversationId,
-                content,
-                chatbot._id,
-                chatbot.workspaceId
-            );
-            if (leadProcessResult.leadDetected) {
-                logger.info('✅ Lead detectado y guardado automáticamente', {
-                    conversationId,
-                    leadId: leadProcessResult.leadId,
-                    leadInfo: leadProcessResult.leadInfo
-                });
-            }
+            // 3.5. Captura automática de leads — desactivada temporalmente
+            // TODO: reactivar cuando el módulo de leads esté listo
+            // const LeadServiceClass = (await import('./../../services/leads/lead.service.js')).default;
+            // const leadService = new LeadServiceClass();
+            // const leadProcessResult = await leadService.processMessageForLead(
+            //     conversationId,
+            //     content,
+            //     chatbot._id,
+            //     chatbot.workspaceId
+            // );
+            // if (leadProcessResult.leadDetected) {
+            //     logger.info('✅ Lead detectado y guardado automáticamente', {
+            //         conversationId,
+            //         leadId: leadProcessResult.leadId,
+            //         leadInfo: leadProcessResult.leadInfo
+            //     });
+            // }
 
             // 4. Obtener información adicional de empresa
             const companyInfo = await CompanyInfo.findOne({ workspaceId: chatbot.workspaceId });
@@ -398,6 +400,22 @@ export default class EmbedService {
                 chatbot._id
             );
 
+            // Agregar contexto del visitante (isLoggedIn, role, etc.)
+            if (visitorContext && Object.keys(visitorContext).length > 0) {
+                const lines = [];
+                if (visitorContext.isLoggedIn !== undefined)
+                    lines.push(`- Autenticado: ${visitorContext.isLoggedIn ? 'Sí' : 'No'}`);
+                if (visitorContext.name)   lines.push(`- Nombre: ${visitorContext.name}`);
+                if (visitorContext.email)  lines.push(`- Email: ${visitorContext.email}`);
+                if (visitorContext.role)   lines.push(`- Rol/Plan: ${visitorContext.role}`);
+                if (visitorContext.custom && typeof visitorContext.custom === 'object') {
+                    Object.entries(visitorContext.custom).forEach(([k, v]) => lines.push(`- ${k}: ${v}`));
+                }
+                if (lines.length > 0) {
+                    systemPrompt += `\n\n👤 CONTEXTO DEL USUARIO:\n${lines.join('\n')}`;
+                }
+            }
+
             // Agregar contexto RAG al final del system prompt
             if (contextText) {
                 systemPrompt += `\n\nINFORMACIÓN ADICIONAL DE DOCUMENTOS:\n${contextText}`;
@@ -420,13 +438,14 @@ export default class EmbedService {
 
             // 11. Llamar OpenAI (con function calling si agendamiento activo)
             const openaiStartTime = Date.now();
-            const calEnabled = chatbot.integrations?.calendar?.enabled;
-                        const activeResources = calEnabled ? await Resource.find({ chatbotId: chatbot._id, isActive: true }) : [];
+            const features = chatbot.features || {};
+            const calEnabled = features.appointments && chatbot.integrations?.calendar?.enabled;
+            const activeResources = calEnabled ? await Resource.find({ chatbotId: chatbot._id, isActive: true }) : [];
             const appointmentTools = activeResources.length > 0 ? [buildAppointmentTool(chatbot)] : [];
             const isDineIn = !!(conversation.visitorMetadata?.tableId);
-            const deliveryTools = (chatbot.deliveryConfig?.enabled || isDineIn) ? [buildOrderTool(chatbot)] : [];
-            const billTools     = isDineIn ? [REQUEST_BILL_TOOL] : [];
-            const quoteTools    = (chatbot.businessType === 'store' && chatbot.quoteConfig?.enabled) ? [GENERATE_QUOTE_TOOL] : [];
+            const deliveryTools = features.sales && (chatbot.deliveryConfig?.enabled || isDineIn) ? [buildOrderTool(chatbot)] : [];
+            const billTools     = features.sales && isDineIn ? [REQUEST_BILL_TOOL] : [];
+            const quoteTools    = features.quotes && (chatbot.businessType === 'store' && chatbot.quoteConfig?.enabled) ? [GENERATE_QUOTE_TOOL] : [];
             const allTools = [...appointmentTools, ...deliveryTools, ...billTools, ...quoteTools];
 
             const response = await openaiService.generateResponse(
@@ -450,7 +469,8 @@ export default class EmbedService {
                         chatbot._id.toString(),
                         args.date,
                         args.time,
-                        args.guest_count || 1
+                        args.guest_count || 1,
+                        args.preferred_resource || null
                     );
                     if (best) {
                         // Ensure date is in the future — fix year if AI hallucinated a past year
@@ -499,8 +519,12 @@ export default class EmbedService {
 
                         // Guard: show summary and require explicit confirmation
                         // Detect confirmation from last user message — any affirmative short response
-                        const lastUserMsg = (history[0]?.content || '').trim();
-                        const isConfirmation = lastUserMsg.length <= 30 && /\b(s[íi]|si|ok|yes|confirm|correcto|listo|dale|claro|va|bien|adelante|perfecto)\b/i.test(lastUserMsg);
+                        // Confirmation detection — find the last USER message (not assistant)
+                        // history is sorted createdAt:-1 so history[0] could be an assistant message
+                        const lastUserMsg = (history.find(m => m.role === 'user')?.content || '').trim();
+                        // Strip accents and check against confirmation patterns
+                        const lowerMsg = lastUserMsg.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+                        const isConfirmation = lastUserMsg.length <= 60 && /^(sip?|si|ok|yes|confirm[ao]?|correcto|listo|dale|claro|va|bien|adelante|perfecto|anda|bueno|exacto|afirmativo|seguro|obvio|por supuesto|claro que si|si confirmo|si ok|si dale|si listo|si perfecto|si todo correcto|todo correcto|asi es|es correcto|lo confirmo|confirmo|reserva|reservar|agenda|agendar|hagalo|si hagalo|si por favor|por favor|va!)[\s!.]*$/i.test(lowerMsg);
                         if (!isConfirmation) {
                             const confirmedDateStr2 = new Date(`${dateStr}T${args.time}:00.000Z`).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
                             // Build summary dynamically from all fields that have a value
@@ -1376,13 +1400,47 @@ export default class EmbedService {
         try {
             const chatbot = await Chatbot.findOne({ embedKey }).select('name widget businessType personality.welcomeMessage');
             if (!chatbot) return { success: false, message: 'Chatbot no encontrado' };
+
+            // Sugerencias: usar las del bot si existen, sino fallback por businessType
+            const DEFAULT_SUGGESTIONS = {
+                restaurant: [
+                    { icon: '🍽️', text: '¿Qué tienen en el menú hoy?' },
+                    { icon: '📅', text: 'Quiero reservar una mesa' },
+                    { icon: '🛵', text: 'Quiero hacer un pedido' },
+                    { icon: '📍', text: '¿Dónde están y a qué hora abren?' },
+                ],
+                store: [
+                    { icon: '🛍️', text: '¿Qué productos tienen disponibles?' },
+                    { icon: '🚚', text: '¿Hacen despacho a domicilio?' },
+                    { icon: '💳', text: '¿Cuáles son los métodos de pago?' },
+                    { icon: '🔄', text: '¿Cuál es la política de devoluciones?' },
+                ],
+                clinic: [
+                    { icon: '📅', text: 'Quiero agendar una consulta' },
+                    { icon: '👨‍⚕️', text: '¿Qué especialidades tienen?' },
+                    { icon: '💊', text: '¿Aceptan seguros de salud?' },
+                    { icon: '📍', text: '¿Dónde están ubicados?' },
+                ],
+                generic: [
+                    { icon: '💬', text: '¿En qué me pueden ayudar?' },
+                    { icon: '📞', text: '¿Cómo los puedo contactar?' },
+                    { icon: '🕐', text: '¿Cuál es el horario de atención?' },
+                    { icon: '📍', text: '¿Dónde están ubicados?' },
+                ],
+            };
+
+            const suggestions = (chatbot.widget?.suggestions?.length > 0)
+                ? chatbot.widget.suggestions
+                : (DEFAULT_SUGGESTIONS[chatbot.businessType] || DEFAULT_SUGGESTIONS.generic);
+
             return {
                 success: true,
                 data: {
-                    name:         chatbot.name,
-                    businessType: chatbot.businessType || 'generic',
-                    widget:       chatbot.widget || {},
+                    name:           chatbot.name,
+                    businessType:   chatbot.businessType || 'generic',
+                    widget:         chatbot.widget || {},
                     welcomeMessage: chatbot.personality?.welcomeMessage || '',
+                    suggestions,
                 },
             };
         } catch (error) {
@@ -1395,7 +1453,7 @@ export default class EmbedService {
             const chatbot = await Chatbot.findById(botId).select('_id name widget embedKey');
             if (!chatbot) return { success: false, message: 'Chatbot no encontrado' };
             const apiUrl = process.env.API_URL || 'http://localhost:5001';
-            const embedCode = `<!-- Zapien Chat Widget -->\n<script src="${apiUrl}/widget.js" data-embed-key="${chatbot.embedKey}" async></script>\n<!-- End Zapien Chat Widget -->`;
+            const embedCode = `<!-- Bezpian Chat Widget -->\n<script src="${apiUrl}/widget.js" data-embed-key="${chatbot.embedKey}" async></script>\n<!-- End Bezpian Chat Widget -->`;
             return { success: true, data: { chatbotId: botId, chatbotName: chatbot.name, embedCode } };
         } catch (error) {
             return { success: false, message: error.message };

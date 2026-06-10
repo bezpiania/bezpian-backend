@@ -22,14 +22,18 @@ const chatbotSchema = new mongoose.Schema({
     position: String,
     avatar: String,
     proactiveMessage: String,
-    proactiveDelaySeconds: Number
+    proactiveDelaySeconds: Number,
+    pattern: { type: String, default: 'dots' },
+    patternOpacity: { type: Number, default: 0.45 },
+    suggestions: [{ icon: String, text: String }],
   },
 
   features: {
-    chat: { type: Boolean, default: true },
-    quotes: { type: Boolean, default: false },
+    chat:         { type: Boolean, default: true },
+    quotes:       { type: Boolean, default: false },
     appointments: { type: Boolean, default: false },
-    leadCapture: { type: Boolean, default: false }
+    sales:        { type: Boolean, default: false },
+    leadCapture:  { type: Boolean, default: false }
   },
 
   integrations: {
@@ -98,7 +102,7 @@ const chatbotSchema = new mongoose.Schema({
   openaiModel: {
     type: String,
     default: 'gpt-3.5-turbo',
-    enum: ['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo']
+    enum: ['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo', 'gpt-4o', 'gpt-4o-mini']
   },
 
   openaiSettings: {
@@ -115,6 +119,25 @@ const chatbotSchema = new mongoose.Schema({
     type: String,
     enum: ['manual', 'shopify', 'jumpseller', 'woocommerce', 'custom_api'],
     default: 'manual'
+  },
+
+  // WooCommerce sync config
+  woocommerceConfig: {
+    storeUrl:       { type: String, default: null },   // e.g. https://imfluid.cl
+    consumerKey:    {
+      type: String, default: null,
+      set: v => v ? encrypt(v) : null,
+      get: v => v ? decrypt(v) : null,
+    },
+    consumerSecret: {
+      type: String, default: null,
+      set: v => v ? encrypt(v) : null,
+      get: v => v ? decrypt(v) : null,
+    },
+    lastSyncAt:     { type: Date, default: null },
+    lastSyncCount:  { type: Number, default: 0 },
+    lastSyncStatus: { type: String, enum: ['idle','syncing','success','error'], default: 'idle' },
+    lastSyncError:  { type: String, default: null },
   },
 
   activeIntegrationId: {

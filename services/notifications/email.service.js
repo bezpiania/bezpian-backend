@@ -184,12 +184,12 @@ class EmailService {
     const roleLabels = { admin: 'Administrador', member: 'Operador', owner: 'Owner' };
     try {
       await this.transporter.sendMail({
-        from: `"Zapien" <${process.env.SMTP_USER}>`,
+        from: `"Bezpian" <${process.env.SMTP_USER}>`,
         to: email,
-        subject: `Te invitaron a unirte a ${workspaceName} en Zapien`,
+        subject: `Te invitaron a unirte a ${workspaceName} en Bezpian`,
         html: `
           <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#F4F0E8;border-radius:12px;">
-            <div style="font-size:22px;font-weight:700;margin-bottom:8px;">Zapien</div>
+            <div style="font-size:22px;font-weight:700;margin-bottom:8px;">Bezpian</div>
             <h2 style="margin:0 0 12px;font-size:20px;">Te invitaron a <em>${workspaceName}</em></h2>
             <p style="color:#555;margin-bottom:24px;">
               Tienes una invitación para unirte al workspace <strong>${workspaceName}</strong> como <strong>${roleLabels[role] || role}</strong>.

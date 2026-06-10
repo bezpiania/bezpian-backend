@@ -13,8 +13,15 @@ const productSchema = new mongoose.Schema({
   chatbotId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Chatbot',   required: true },
   workspaceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Workspace', required: true },
 
+  // ── Item type — distingue plato / producto físico / servicio ─────────────
+  itemType: {
+    type: String,
+    enum: ['dish', 'product', 'service'],
+    default: 'product',
+  },
+
   // ── Base fields (all business types) ─────────────────────────────────────
-  sku:         { type: String, default: null },   // optional — required for store
+  sku:         { type: String },   // optional — required for store; no default so sparse index works
   name:        { type: String, required: true },
   description: { type: String },
   price:       { type: Number, default: 0 },      // 0 = "Consultar"
@@ -85,7 +92,10 @@ const productSchema = new mongoose.Schema({
 });
 
 productSchema.index({ chatbotId: 1 });
-productSchema.index({ chatbotId: 1, sku: 1 }, { sparse: true });
+productSchema.index(
+  { chatbotId: 1, sku: 1 },
+  { unique: true, partialFilterExpression: { sku: { $type: 'string' } } }
+);
 productSchema.index({ embedding: 'cosmosSearch' }, { cosmosSearchOptions: { kind: 'vector-ivf', m: 4, efConstruction: 400, efSearch: 400, metric: 'cosine' } });
 productSchema.index(
   { name: 'text', description: 'text', category: 'text', tags: 'text' },
