@@ -49,7 +49,12 @@ function buildAppointmentTool(chatbot) {
         type: 'function',
         function: {
             name: 'book_appointment',
-            description: `Crea una reserva SOLO cuando el cliente haya confirmado EXPLÍCITAMENTE: fecha, hora, número de personas, su nombre real y teléfono. NO uses nombres de ejemplo ni datos inventados. Si falta cualquier dato obligatorio, pregúntalo antes de llamar esta función.`,
+            description: `Reserva una mesa o cita. REGLAS ESTRICTAS:
+1. NUNCA llames esta función si el cliente solo está consultando disponibilidad, preguntando si hay mesas, o haciendo una pregunta (contiene "?" o palabras como "¿tienen", "¿hay", "¿puedo", "¿están disponibles").
+2. SOLO llama esta función cuando el cliente haya dado EXPLÍCITAMENTE: su nombre real, teléfono real, fecha y hora deseadas.
+3. NUNCA inventes ni uses valores de placeholder como "Usuario", "Cliente", "Tu nombre", "123456789", "[nombre]", etc.
+4. Si falta cualquier dato obligatorio, pregúntalo primero — no llames la función.
+5. Para consultas de disponibilidad, responde en texto indicando los horarios disponibles sin llamar esta función.`,
             parameters: { type: 'object', properties, required },
         },
     };
@@ -465,6 +470,21 @@ export default class EmbedService {
             if (response.toolCall?.function?.name === 'book_appointment') {
                 try {
                     const args = JSON.parse(response.toolCall.function.arguments);
+
+                    // Guard: if the user's message is a question about availability, don't book — inform instead
+                    const IS_AVAILABILITY_QUERY = /(\?|¿|¿hay|¿tienen|¿está|¿puedo|¿se puede|hay mesa|hay disponib|están disponib|tienen mesa|tienen lugar|tienen espacio|queda.*mesa|disponib)/i;
+                    const currentUserMsg = content?.trim() || '';
+                    if (IS_AVAILABILITY_QUERY.test(currentUserMsg) && currentUserMsg.includes('?') || (currentUserMsg.includes('¿') && !/(quiero|quisiera|necesito|me gustaría|me puede|reservar|agendar|hacer una reserva)/i.test(currentUserMsg))) {
+                        // User is asking, not booking — reply with availability info in text
+                        const availMsg = await Message.create({
+                            conversationId: conversation._id,
+                            chatbotId: chatbot._id,
+                            role: 'assistant',
+                            content: `¡Claro! Tenemos disponibilidad para esa fecha y hora. ¿Te gustaría hacer una reserva? Si es así, necesito tu nombre completo, teléfono y cuántas personas serán.`,
+                            createdAt: new Date(),
+                        });
+                        return { success: true, data: { botMessage: availMsg } };
+                    }
                                         const best = await findBestResource(
                         chatbot._id.toString(),
                         args.date,
@@ -500,17 +520,36 @@ export default class EmbedService {
                         const resolvedPhone = resolvedValues['phone'] || '';
                         const resolvedEmail = resolvedValues['email'] || '';
 
-                        // Detect AI-invented placeholder values — only bracket/brace patterns
-                        const isPlaceholderValue = (v) => !v || v.trim() === '' || /^\[.+\]$/.test(v.trim()) || /^\{.+\}$/.test(v.trim());
+                        // Detect AI-invented placeholder values — brackets, braces, or generic words
+                        const GENERIC_NAMES = /^(usuario|cliente|user|nombre|tu nombre|su nombre|name|cliente \d+|person|persona|fulano|customer|invitado|guest|visitante|n\/a|none|null|undefined|example|ejemplo)$/i;
+                        const GENERIC_PHONES = /^(123456789|000000000|111111111|999999999|teléfono|telefono|phone|número|numero|tu teléfono|\+?0+)$/i;
+                        const isPlaceholderValue = (v, fieldId) => {
+                            if (!v || v.trim() === '') return true;
+                            if (/^\[.+\]$/.test(v.trim()) || /^\{.+\}$/.test(v.trim())) return true;
+                            if (fieldId === 'name'  && GENERIC_NAMES.test(v.trim()))  return true;
+                            if (fieldId === 'phone' && GENERIC_PHONES.test(v.trim())) return true;
+                            return false;
+                        };
+
+                        // Guard: verify that name/phone values actually came from user messages (not AI-invented)
+                        const userMsgTexts = history.filter(m => m.role === 'user').map(m => (m.content || '').toLowerCase());
+                        const valueFoundInHistory = (val) => {
+                            if (!val || val.trim().length < 2) return false;
+                            const lower = val.trim().toLowerCase();
+                            return userMsgTexts.some(msg => msg.includes(lower));
+                        };
 
                         // Dynamic guard: check ALL required fields from chatbot config
                         const requiredFields = fields.filter(f => f.required === true);
                         for (const f of requiredFields) {
                             const val = resolvedValues[f.fieldId] || '';
-                            if (isPlaceholderValue(val)) {
+                            // Field is missing if it's a placeholder OR if the value wasn't mentioned in user messages
+                            const isMissing = isPlaceholderValue(val, f.fieldId) || !valueFoundInHistory(val);
+                            if (isMissing) {
                                 const nameField = fields.find(fd => fd.fieldId === 'name');
                                 const nameVal = nameField ? resolvedValues['name'] : '';
-                                const prefix = nameVal && !isPlaceholderValue(nameVal) ? `Perfecto, ${nameVal}. ` : '';
+                                const nameIsReal = nameVal && !isPlaceholderValue(nameVal, 'name') && valueFoundInHistory(nameVal);
+                                const prefix = nameIsReal ? `Perfecto, ${nameVal}. ` : '';
                                 response.content = `${prefix}Para confirmar la reserva necesito tu ${f.label.toLowerCase()}. ¿Me lo puedes indicar?`;
                                 const missingMsg = await Message.create({ conversationId: conversation._id, chatbotId: chatbot._id, role: 'assistant', content: response.content, createdAt: new Date() });
                                 return { success: true, data: { botMessage: missingMsg } };
@@ -528,7 +567,7 @@ export default class EmbedService {
                         if (!isConfirmation) {
                             const confirmedDateStr2 = new Date(`${dateStr}T${args.time}:00.000Z`).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
                             // Build summary dynamically from all fields that have a value
-                            const fieldSummary = fields.filter(f => resolvedValues[f.fieldId] && !isPlaceholderValue(resolvedValues[f.fieldId]))
+                            const fieldSummary = fields.filter(f => resolvedValues[f.fieldId] && !isPlaceholderValue(resolvedValues[f.fieldId], f.fieldId))
                                 .map(f => `• *${f.label}:* ${resolvedValues[f.fieldId]}`).join('\n');
                             response.content = `Perfecto, te confirmo los datos de tu reserva:\n\n📅 *${confirmedDateStr2.charAt(0).toUpperCase() + confirmedDateStr2.slice(1)}* a las *${args.time}*\n👥 *${args.guest_count || 1} persona${(args.guest_count || 1) !== 1 ? 's' : ''}*\n${fieldSummary}\n\n¿Todo correcto? Confirma para reservar.`;
                             const summaryMsg = await Message.create({ conversationId: conversation._id, chatbotId: chatbot._id, role: 'assistant', content: response.content, createdAt: new Date() });
