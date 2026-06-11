@@ -28,6 +28,15 @@ const conversationSchema = new mongoose.Schema({
     phone: String,
     company: String,
     updatedAt: Date
+  },
+
+  // Slots de reserva en progreso — guardados al primer intento válido para no perderlos
+  pendingBookingSlots: {
+    date:            String,   // YYYY-MM-DD
+    time:            String,   // HH:MM
+    guestCount:      Number,
+    savedAt:         Date,
+    collectedFields: { type: mongoose.Schema.Types.Mixed, default: {} }
   }
 });
 

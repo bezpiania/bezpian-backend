@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import * as chrono from 'chrono-node';
 import { getPlanLimits } from '../../config/plans.js';
 import Chatbot from '../../models/Chatbot.js';
 import Conversation from '../../models/Conversation.js';
@@ -441,6 +442,79 @@ export default class EmbedService {
                 }
             ];
 
+            // 10c. Pre-LLM booking check — if all required booking data is already collected,
+            // show the confirmation summary or complete the booking without calling the LLM
+            {
+                const slotsNow = conversation.pendingBookingSlots || {};
+                const cfNow = slotsNow.collectedFields || {};
+                const hasDateNow = slotsNow.date && /^\d{4}-\d{2}-\d{2}$/.test(slotsNow.date);
+                const hasTimeNow = slotsNow.time && /^\d{2}:\d{2}$/.test(slotsNow.time);
+                if (hasDateNow && hasTimeNow && chatbot.appointmentFields?.length > 0) {
+                    // Extract any new field values from current message
+                    const apptFieldsNow = chatbot.appointmentFields || [];
+                    const allUserMsgsNow = (await Message.find({ conversationId: conversation._id, role: 'user' }).sort({ createdAt: -1 }).limit(20)).map(m => m.content || '');
+                    if (content && !allUserMsgsNow.includes(content)) allUserMsgsNow.push(content);
+
+                    // Phone extraction
+                    if (!cfNow['phone']) {
+                        const phoneM = allUserMsgsNow.join(' ').match(/(?:^|\s)(\+?[0-9]{7,15})(?:\s|$)/);
+                        if (phoneM) cfNow['phone'] = phoneM[1].trim();
+                    }
+                    // Name extraction
+                    if (!cfNow['name']) {
+                        for (const msg of allUserMsgsNow) {
+                            const nameM = msg.trim().match(/(?:mi nombre es|me llamo|soy)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?)\s*[.,!?]?\s*$/i);
+                            if (nameM) { cfNow['name'] = nameM[1].trim(); break; }
+                        }
+                    }
+
+                    const reqFieldsNow = apptFieldsNow.filter(f => f.required);
+                    const allReadyNow = reqFieldsNow.every(f => cfNow[f.fieldId] && cfNow[f.fieldId].trim());
+
+                    if (allReadyNow) {
+                        // Persist updated cf
+                        await Conversation.updateOne({ _id: conversation._id }, { $set: { 'pendingBookingSlots.collectedFields': cfNow } });
+
+                        // Check if user is confirming or we need to show summary first
+                        const currentMsgLower = (content || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                        const isConfirmNow = content.trim().length <= 60 && /^(si|sip|ok|yes|confirm[ao]?|correcto|listo|dale|claro|va|bien|adelante|perfecto|anda|bueno|exacto|afirmativo|seguro|lo confirmo|confirmo|reserva|reservar|agenda|agendar|hagalo|si por favor|por favor|si confirmo|si ok|todo correcto)[\.\s!?]*$/i.test(currentMsgLower);
+                        const existingApptNow = await Appointment.findOne({ conversationId: conversation._id, status: { $ne: 'cancelled' } });
+
+                        if (isConfirmNow && !existingApptNow) {
+                            // User confirmed — book it now
+                            try {
+                                const realBestNow = await findBestResource(chatbot._id.toString(), slotsNow.date, slotsNow.time, slotsNow.guestCount || 1, null);
+                                if (realBestNow) {
+                                    const scheduledAtNow = new Date(`${slotsNow.date}T${slotsNow.time}:00.000Z`);
+                                    await Appointment.create({
+                                        chatbotId: chatbot._id, workspaceId: chatbot.workspaceId,
+                                        conversationId: conversation._id, resourceId: realBestNow.id,
+                                        scheduledAt: scheduledAtNow, guestCount: slotsNow.guestCount || 1,
+                                        durationMinutes: realBestNow.durationMinutes || 90,
+                                        customerName: cfNow['name'] || '', customerEmail: cfNow['email'] || '',
+                                        customerPhone: cfNow['phone'] || '',
+                                        notes: apptFieldsNow.filter(f => cfNow[f.fieldId]).map(f => `${f.label}: ${cfNow[f.fieldId]}`).join(' | '),
+                                        status: 'scheduled',
+                                    });
+                                    await Chatbot.updateOne({ _id: chatbot._id }, { $inc: { 'stats.totalAppointments': 1 } });
+                                    await Conversation.updateOne({ _id: conversation._id }, { $set: { outcome: 'appointment', pendingBookingSlots: null } });
+                                    const confirmedDateNow = scheduledAtNow.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+                                    const confirmMsg = await Message.create({ conversationId: conversation._id, chatbotId: chatbot._id, role: 'assistant', content: `✅ ¡Reserva confirmada, ${cfNow['name']}! Te esperamos el **${confirmedDateNow.charAt(0).toUpperCase() + confirmedDateNow.slice(1)} a las ${slotsNow.time}** (${slotsNow.guestCount || 1} persona${(slotsNow.guestCount||1) !== 1 ? 's' : ''}). ¿Hay algo más en que pueda ayudarte?`, createdAt: new Date() });
+                                    return { success: true, data: { botMessage: confirmMsg } };
+                                }
+                            } catch(e) { logger.error('Pre-LLM booking error', { error: e.message }); }
+                        } else if (!existingApptNow) {
+                            // Not yet confirmed — show the summary (skip the LLM entirely to avoid wrong responses)
+                            const dateStrNow = new Date(`${slotsNow.date}T${slotsNow.time}:00.000Z`).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+                            const fieldSummaryNow = apptFieldsNow.filter(f => cfNow[f.fieldId]).map(f => `• *${f.label}:* ${cfNow[f.fieldId]}`).join('\n');
+                            const summaryContent = `Perfecto, te confirmo los datos de tu reserva:\n\n📅 *${dateStrNow.charAt(0).toUpperCase() + dateStrNow.slice(1)}* a las *${slotsNow.time}*\n👥 *${slotsNow.guestCount || 1} persona${(slotsNow.guestCount||1) !== 1 ? 's' : ''}*\n${fieldSummaryNow}\n\n¿Todo correcto? Confirma para reservar.`;
+                            const summaryMsgNow = await Message.create({ conversationId: conversation._id, chatbotId: chatbot._id, role: 'assistant', content: summaryContent, createdAt: new Date() });
+                            return { success: true, data: { botMessage: summaryMsgNow } };
+                        }
+                    }
+                }
+            }
+
             // 11. Llamar OpenAI (con function calling si agendamiento activo)
             const openaiStartTime = Date.now();
             const features = chatbot.features || {};
@@ -485,7 +559,85 @@ export default class EmbedService {
                         });
                         return { success: true, data: { botMessage: availMsg } };
                     }
-                                        const best = await findBestResource(
+
+                    // ── Slot persistence: restore date/time from conversation if AI forgot them ──
+                    // Helper: is a date string valid and in the future?
+                    const isValidFutureDate = (d) => {
+                        if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+                        return new Date(d + 'T00:00:00Z') >= new Date(new Date().toISOString().split('T')[0] + 'T00:00:00Z');
+                    };
+                    const isValidTime = (t) => t && /^\d{2}:\d{2}$/.test(t);
+
+                    // Extract date/time from user messages using NLP (fallback when AI doesn't convert correctly)
+                    const extractDateTimeFromHistory = () => {
+                        const refDate = new Date();
+                        // Build a combined text from all user messages
+                        const userText = history.filter(m => m.role === 'user').map(m => m.content || '').reverse().join(' ');
+                        try {
+                            const results = chrono.es.parse(userText, refDate, { forwardDate: true });
+                            if (results.length > 0) {
+                                const r = results[0];
+                                const dt = r.start.date();
+                                // Only accept if date is today or future
+                                const today = new Date(); today.setHours(0,0,0,0);
+                                if (dt >= today) {
+                                    const yyyy = dt.getFullYear();
+                                    const mm = String(dt.getMonth()+1).padStart(2,'0');
+                                    const dd = String(dt.getDate()).padStart(2,'0');
+                                    const hh = String(dt.getHours()).padStart(2,'0');
+                                    const mi = String(dt.getMinutes()).padStart(2,'0');
+                                    return { date: `${yyyy}-${mm}-${dd}`, time: `${hh}:${mi}` };
+                                }
+                            }
+                        } catch(e) { /* ignore parse errors */ }
+                        return null;
+                    };
+
+                    // Load saved slots from this conversation
+                    const savedSlots = conversation.pendingBookingSlots || {};
+
+                    // If AI provided valid new date/time, save them to conversation for future turns
+                    if (isValidFutureDate(args.date) && isValidTime(args.time)) {
+                        const newCount = args.guest_count || savedSlots.guestCount || 1;
+                        if (args.date !== savedSlots.date || args.time !== savedSlots.time || newCount !== savedSlots.guestCount) {
+                            await conversation.updateOne({ $set: { pendingBookingSlots: { date: args.date, time: args.time, guestCount: newCount, savedAt: new Date() } } });
+                            savedSlots.date = args.date;
+                            savedSlots.time = args.time;
+                            savedSlots.guestCount = newCount;
+                        }
+                    }
+
+                    // If AI forgot date/time, try: 1) saved slots, 2) NLP parse from history
+                    if (!isValidFutureDate(args.date) || !isValidTime(args.time)) {
+                        // Try saved slots first
+                        if (isValidFutureDate(savedSlots.date) && isValidTime(savedSlots.time)) {
+                            args.date = savedSlots.date;
+                            args.time = savedSlots.time;
+                        } else {
+                            // Try NLP extraction from conversation history
+                            const extracted = extractDateTimeFromHistory();
+                            if (extracted) {
+                                args.date = extracted.date;
+                                args.time = extracted.time;
+                                // Save for future turns
+                                await conversation.updateOne({ $set: { pendingBookingSlots: { date: extracted.date, time: extracted.time, guestCount: args.guest_count || 1, savedAt: new Date() } } });
+                                savedSlots.date = extracted.date;
+                                savedSlots.time = extracted.time;
+                            }
+                        }
+                    }
+
+                    if (!args.guest_count && savedSlots.guestCount) {
+                        args.guest_count = savedSlots.guestCount;
+                    }
+
+                    // If we still have no valid date/time at all, ask the user
+                    if (!isValidFutureDate(args.date) || !isValidTime(args.time)) {
+                        const noDateMsg = await Message.create({ conversationId: conversation._id, chatbotId: chatbot._id, role: 'assistant', content: 'Para hacer la reserva necesito saber la fecha y hora que prefieres. ¿Cuándo te gustaría venir?', createdAt: new Date() });
+                        return { success: true, data: { botMessage: noDateMsg } };
+                    }
+
+                    const best = await findBestResource(
                         chatbot._id.toString(),
                         args.date,
                         args.time,
@@ -521,7 +673,7 @@ export default class EmbedService {
                         const resolvedEmail = resolvedValues['email'] || '';
 
                         // Detect AI-invented placeholder values — brackets, braces, or generic words
-                        const GENERIC_NAMES = /^(usuario|cliente|user|nombre|tu nombre|su nombre|name|cliente \d+|person|persona|fulano|customer|invitado|guest|visitante|n\/a|none|null|undefined|example|ejemplo)$/i;
+                        const GENERIC_NAMES = /^(usuario|cliente|user|nombre|nombre completo|tu nombre|su nombre|nombre del cliente|ingresa tu nombre|name|full name|cliente \d+|person|persona|fulano|juan p[eé]rez|juan g[oó]mez|mar[ií]a garc[ií]a|john doe|jane doe|customer|invitado|guest|visitante|n\/a|none|null|undefined|example|ejemplo)$/i;
                         const GENERIC_PHONES = /^(123456789|000000000|111111111|999999999|teléfono|telefono|phone|número|numero|tu teléfono|\+?0+)$/i;
                         const isPlaceholderValue = (v, fieldId) => {
                             if (!v || v.trim() === '') return true;
@@ -539,16 +691,34 @@ export default class EmbedService {
                             return userMsgTexts.some(msg => msg.includes(lower));
                         };
 
+                        // Merge args with previously collected fields from slots
+                        const collectedFields = savedSlots.collectedFields || {};
+                        for (const f of fields) {
+                            const argsVal = resolvedValues[f.fieldId] || '';
+                            const savedVal = collectedFields[f.fieldId] || '';
+                            // If AI provided a valid value this turn, update collected fields
+                            if (!isPlaceholderValue(argsVal, f.fieldId) && valueFoundInHistory(argsVal)) {
+                                collectedFields[f.fieldId] = argsVal;
+                            }
+                            // Use collected field value as fallback if current args don't have it
+                            if (isPlaceholderValue(argsVal, f.fieldId) && !isPlaceholderValue(savedVal, f.fieldId)) {
+                                resolvedValues[f.fieldId] = savedVal;
+                            }
+                        }
+                        // Persist updated collectedFields to conversation
+                        if (Object.keys(collectedFields).length > 0) {
+                            await conversation.updateOne({ $set: { 'pendingBookingSlots.collectedFields': collectedFields } });
+                        }
+
                         // Dynamic guard: check ALL required fields from chatbot config
                         const requiredFields = fields.filter(f => f.required === true);
                         for (const f of requiredFields) {
                             const val = resolvedValues[f.fieldId] || '';
                             // Field is missing if it's a placeholder OR if the value wasn't mentioned in user messages
-                            const isMissing = isPlaceholderValue(val, f.fieldId) || !valueFoundInHistory(val);
+                            const isMissing = (isPlaceholderValue(val, f.fieldId) || !valueFoundInHistory(val)) && !collectedFields[f.fieldId];
                             if (isMissing) {
-                                const nameField = fields.find(fd => fd.fieldId === 'name');
-                                const nameVal = nameField ? resolvedValues['name'] : '';
-                                const nameIsReal = nameVal && !isPlaceholderValue(nameVal, 'name') && valueFoundInHistory(nameVal);
+                                const nameVal = resolvedValues['name'] || collectedFields['name'] || '';
+                                const nameIsReal = nameVal && !isPlaceholderValue(nameVal, 'name');
                                 const prefix = nameIsReal ? `Perfecto, ${nameVal}. ` : '';
                                 response.content = `${prefix}Para confirmar la reserva necesito tu ${f.label.toLowerCase()}. ¿Me lo puedes indicar?`;
                                 const missingMsg = await Message.create({ conversationId: conversation._id, chatbotId: chatbot._id, role: 'assistant', content: response.content, createdAt: new Date() });
@@ -557,10 +727,9 @@ export default class EmbedService {
                         }
 
                         // Guard: show summary and require explicit confirmation
-                        // Detect confirmation from last user message — any affirmative short response
-                        // Confirmation detection — find the last USER message (not assistant)
-                        // history is sorted createdAt:-1 so history[0] could be an assistant message
-                        const lastUserMsg = (history.find(m => m.role === 'user')?.content || '').trim();
+                        // Use the CURRENT user message (content param) for confirmation check
+                        // history[] doesn't include the current message yet (not saved to DB yet)
+                        const lastUserMsg = (content || history.find(m => m.role === 'user')?.content || '').trim();
                         // Strip accents and check against confirmation patterns
                         const lowerMsg = lastUserMsg.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
                         const isConfirmation = lastUserMsg.length <= 60 && /^(sip?|si|ok|yes|confirm[ao]?|correcto|listo|dale|claro|va|bien|adelante|perfecto|anda|bueno|exacto|afirmativo|seguro|obvio|por supuesto|claro que si|si confirmo|si ok|si dale|si listo|si perfecto|si todo correcto|todo correcto|asi es|es correcto|lo confirmo|confirmo|reserva|reservar|agenda|agendar|hagalo|si hagalo|si por favor|por favor|va!)[\s!.]*$/i.test(lowerMsg);
@@ -778,6 +947,132 @@ export default class EmbedService {
                 } catch (fnErr) {
                     logger.error('Error processing request_bill tool call', { error: fnErr.message });
                     response.content = `Hubo un problema al procesar tu solicitud. Por favor llama a un mesero.`;
+                }
+            }
+
+            // 10b. Active field collection + false-confirmation interceptor
+            // Run on EVERY text response when appointments are enabled — extracts field values from user messages
+            // and intercepts false "confirmed" text responses that didn't go through book_appointment
+            if (!response.toolCall && chatbot.appointmentFields?.length > 0) {
+                const apptConfig = chatbot.schedulingConfig || chatbot.appointmentConfig || {};
+                if (apptConfig.enabled !== false) {
+                    // Reload slots fresh from DB (they may have been updated inside book_appointment path)
+                    const freshConv = await Conversation.findById(conversation._id).lean();
+                    const slots = freshConv?.pendingBookingSlots || {};
+                    const cf = { ...(slots.collectedFields || {}) };
+
+                    // ── Extract field values from ALL user messages ──
+                    const allUserMsgs = history.filter(m => m.role === 'user').map(m => m.content || '');
+                    // Also include current user message (content var) which may not be in history yet
+                    if (content && !allUserMsgs.includes(content)) allUserMsgs.push(content);
+
+                    const apptFields = chatbot.appointmentFields || [];
+
+                    // Phone: extract any phone number from user messages
+                    const phoneField = apptFields.find(f => f.fieldId === 'phone');
+                    if (phoneField && !cf['phone']) {
+                        const phoneMatch = allUserMsgs.join(' ').match(/(?:^|\s)(\+?[0-9]{7,15})(?:\s|$)/);
+                        if (phoneMatch) cf['phone'] = phoneMatch[1].trim();
+                    }
+
+                    // Name: extract from "mi nombre es X Y", "me llamo X Y", "soy X Y"
+                    // Process each message individually and anchor to end of message to avoid grabbing next sentence
+                    const nameField = apptFields.find(f => f.fieldId === 'name');
+                    if (nameField && !cf['name']) {
+                        for (const msg of allUserMsgs) {
+                            const nameMatch = msg.trim().match(/(?:mi nombre es|me llamo|soy)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?)\s*[.,!?]?\s*$/i);
+                            if (nameMatch) { cf['name'] = nameMatch[1].trim(); break; }
+                        }
+                    }
+
+                    // Also extract date/time from user messages if not yet saved
+                    let slotsDate = slots.date;
+                    let slotsTime = slots.time;
+                    const isValidFutureDate2 = (d) => d && /^\d{4}-\d{2}-\d{2}$/.test(d) && new Date(d + 'T00:00:00Z') >= new Date(new Date().toISOString().split('T')[0] + 'T00:00:00Z');
+                    const isValidTime2 = (t) => t && /^\d{2}:\d{2}$/.test(t);
+                    if (!isValidFutureDate2(slotsDate) || !isValidTime2(slotsTime)) {
+                        try {
+                            const refNow = new Date();
+                            const userText2 = allUserMsgs.join(' ');
+                            const results2 = chrono.es.parse(userText2, refNow, { forwardDate: true });
+                            if (results2.length > 0) {
+                                const dt2 = results2[0].start.date();
+                                const today2 = new Date(); today2.setHours(0,0,0,0);
+                                if (dt2 >= today2) {
+                                    slotsDate = `${dt2.getFullYear()}-${String(dt2.getMonth()+1).padStart(2,'0')}-${String(dt2.getDate()).padStart(2,'0')}`;
+                                    slotsTime = `${String(dt2.getHours()).padStart(2,'0')}:${String(dt2.getMinutes()).padStart(2,'0')}`;
+                                }
+                            }
+                        } catch(e) {}
+                    }
+
+                    // Persist extracted data if changed
+                    const cfChanged = JSON.stringify(cf) !== JSON.stringify(slots.collectedFields || {});
+                    const dateChanged = slotsDate !== slots.date || slotsTime !== slots.time;
+                    if (cfChanged || dateChanged) {
+                        await Conversation.updateOne({ _id: conversation._id }, { $set: {
+                            'pendingBookingSlots.collectedFields': cf,
+                            ...(slotsDate && { 'pendingBookingSlots.date': slotsDate }),
+                            ...(slotsTime && { 'pendingBookingSlots.time': slotsTime }),
+                            ...((!slots.guestCount && slots.guestCount !== 0) ? { 'pendingBookingSlots.guestCount': 1 } : {}),
+                        }});
+                    }
+
+                    // ── False confirmation interceptor ──
+                    const FALSE_CONFIRM_PATTERN = /reserva.*(confirmada|lista|registrada|hecha|agendada|procesada)|confirmada.*reserva|te esperamos.*el|cita.*confirmada|tu.*reserva.*está/i;
+                    if (FALSE_CONFIRM_PATTERN.test(response.content || '')) {
+                        const hasDate = isValidFutureDate2(slotsDate);
+                        const hasTime = isValidTime2(slotsTime);
+                        const reqFields = apptFields.filter(f => f.required);
+                        const allFieldsPresent = reqFields.every(f => cf[f.fieldId] && cf[f.fieldId].trim());
+
+                        if (hasDate && hasTime && allFieldsPresent) {
+                            // All data ready — do the actual booking
+                            try {
+                                const guestCnt = slots.guestCount || 1;
+                                const realBest = await findBestResource(chatbot._id.toString(), slotsDate, slotsTime, guestCnt, null);
+                                if (realBest) {
+                                    const existingAppt2 = await Appointment.findOne({ conversationId: conversation._id, status: { $ne: 'cancelled' } });
+                                    if (!existingAppt2) {
+                                        const scheduledAt2 = new Date(`${slotsDate}T${slotsTime}:00.000Z`);
+                                        await Appointment.create({
+                                            chatbotId: chatbot._id,
+                                            workspaceId: chatbot.workspaceId,
+                                            conversationId: conversation._id,
+                                            resourceId: realBest.id,
+                                            scheduledAt: scheduledAt2,
+                                            guestCount: guestCnt,
+                                            durationMinutes: realBest.durationMinutes || 90,
+                                            customerName:  cf['name']  || '',
+                                            customerEmail: cf['email'] || '',
+                                            customerPhone: cf['phone'] || '',
+                                            notes: apptFields.filter(f => cf[f.fieldId]).map(f => `${f.label}: ${cf[f.fieldId]}`).join(' | '),
+                                            status: 'scheduled',
+                                        });
+                                        await Chatbot.updateOne({ _id: chatbot._id }, { $inc: { 'stats.totalAppointments': 1 } });
+                                        await Conversation.updateOne({ _id: conversation._id }, { $set: { outcome: 'appointment', pendingBookingSlots: null } });
+                                        const confirmedDate3 = scheduledAt2.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+                                        const displayName3 = cf['name'] || '';
+                                        response.content = `✅ ¡Reserva confirmada${displayName3 ? `, ${displayName3}` : ''}! Te esperamos el **${confirmedDate3.charAt(0).toUpperCase() + confirmedDate3.slice(1)} a las ${slotsTime}** (${guestCnt} persona${guestCnt !== 1 ? 's' : ''}). ¿Hay algo más en que pueda ayudarte?`;
+                                        logger.info('Appointment created via false-confirmation interceptor', { name: cf['name'], date: slotsDate, time: slotsTime });
+                                    }
+                                }
+                            } catch(interceptErr) {
+                                logger.error('Error in false-confirmation interceptor', { error: interceptErr.message });
+                            }
+                        } else if (!hasDate || !hasTime) {
+                            // No date saved — replace false confirmation with a date request
+                            response.content = 'Para hacer la reserva necesito saber la fecha y hora que prefieres. ¿Cuándo te gustaría venir?';
+                        } else {
+                            // Fields still missing — replace false confirmation with the next question
+                            const missingFieldNow = reqFields.find(f => !cf[f.fieldId] || !cf[f.fieldId].trim());
+                            if (missingFieldNow) {
+                                const nameKnown = cf['name'] && cf['name'].trim();
+                                const prefix2 = nameKnown ? `Perfecto, ${cf['name']}. ` : '';
+                                response.content = `${prefix2}Para confirmar la reserva necesito tu ${missingFieldNow.label.toLowerCase()}. ¿Me lo puedes indicar?`;
+                            }
+                        }
+                    }
                 }
             }
 
