@@ -253,16 +253,13 @@ export default class EmbedService {
                 return { success: false, message: 'Conversación no encontrada' };
             }
 
-            const resolvedApiKey = chatbot.openaiApiKey || process.env.OPENAI_API_KEY;
-            if (!resolvedApiKey) {
+            if (!chatbot.openaiApiKey) {
                 logger.warn('OpenAI API key not configured', { botId });
                 return {
                     success: false,
                     message: 'OpenAI API key no configurada. Por favor, configura tu chatbot.'
                 };
             }
-            // Inject fallback key so downstream code uses it
-            if (!chatbot.openaiApiKey) chatbot.openaiApiKey = resolvedApiKey;
 
             // 2. Verificar cache de respuesta
             // SKIP cache for chatbots with appointments or orders active — responses are conversation-specific
