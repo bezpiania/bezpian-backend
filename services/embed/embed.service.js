@@ -262,7 +262,11 @@ export default class EmbedService {
             }
 
             // 2. Verificar cache de respuesta
-            const cachedResponse = advancedRag.getCachedResponse(botId, content);
+            // SKIP cache for chatbots with appointments or orders active — responses are conversation-specific
+            const hasAppointmentFlow = !!(chatbot.features?.appointments && chatbot.appointmentFields?.length > 0);
+            const hasOrderFlow = !!(chatbot.features?.orders);
+            const skipCache = hasAppointmentFlow || hasOrderFlow;
+            const cachedResponse = skipCache ? null : advancedRag.getCachedResponse(botId, content);
             if (cachedResponse) {
                 logger.info('Returning cached response', {
                     botId,
@@ -467,6 +471,36 @@ export default class EmbedService {
                             if (nameM) { cfNow['name'] = nameM[1].trim(); break; }
                         }
                     }
+                    // Date/time change detection — if the CURRENT message contains a new date/time, update saved slots
+                    // e.g. "Mejor el domingo a las 6pm" should override the previously saved date
+                    if (content) {
+                        try {
+                            const dateChangePatterns = /mejor|cambiar|cambio|prefiero|en cambio|para el|para la|el (lunes|martes|miércoles|jueves|viernes|sábado|domingo)|próximo|siguiente|ahora el/i;
+                            if (dateChangePatterns.test(content)) {
+                                const parsed = chrono.es.parse(content, new Date(), { forwardDate: true });
+                                if (parsed.length > 0) {
+                                    const dt = parsed[0].start.date();
+                                    const today = new Date(); today.setHours(0,0,0,0);
+                                    if (dt >= today) {
+                                        const yyyy = dt.getFullYear();
+                                        const mm = String(dt.getMonth()+1).padStart(2,'0');
+                                        const dd = String(dt.getDate()).padStart(2,'0');
+                                        const hh = String(dt.getHours()).padStart(2,'0');
+                                        const mi = String(dt.getMinutes()).padStart(2,'0');
+                                        const newDate = `${yyyy}-${mm}-${dd}`;
+                                        const newTime = `${hh}:${mi}`;
+                                        if (newDate !== slotsNow.date || newTime !== slotsNow.time) {
+                                            slotsNow.date = newDate;
+                                            slotsNow.time = newTime;
+                                            await Conversation.updateOne({ _id: conversation._id }, {
+                                                $set: { 'pendingBookingSlots.date': newDate, 'pendingBookingSlots.time': newTime, 'pendingBookingSlots.savedAt': new Date() }
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        } catch(e) { /* ignore */ }
+                    }
 
                     const reqFieldsNow = apptFieldsNow.filter(f => f.required);
                     const allReadyNow = reqFieldsNow.every(f => cfNow[f.fieldId] && cfNow[f.fieldId].trim());
@@ -513,6 +547,38 @@ export default class EmbedService {
                         }
                     }
                 }
+            }
+
+            // 10d. Date change detection — runs even when slots are partially filled
+            // e.g. "Mejor el domingo" after date was already saved should override it
+            if (chatbot.appointmentFields?.length > 0 && conversation.pendingBookingSlots?.date && content) {
+                try {
+                    const dateChangePatterns = /mejor|cambiar|cambio|prefiero|en cambio|para el|para la|el (lunes|martes|miércoles|jueves|viernes|sábado|domingo)|próximo|siguiente|ahora el/i;
+                    if (dateChangePatterns.test(content)) {
+                        const parsed10d = chrono.es.parse(content, new Date(), { forwardDate: true });
+                        if (parsed10d.length > 0) {
+                            const dt10d = parsed10d[0].start.date();
+                            const today10d = new Date(); today10d.setHours(0,0,0,0);
+                            if (dt10d >= today10d) {
+                                const yyyy = dt10d.getFullYear();
+                                const mm = String(dt10d.getMonth()+1).padStart(2,'0');
+                                const dd = String(dt10d.getDate()).padStart(2,'0');
+                                const hh = String(dt10d.getHours()).padStart(2,'0');
+                                const mi = String(dt10d.getMinutes()).padStart(2,'0');
+                                const newDate10d = `${yyyy}-${mm}-${dd}`;
+                                const newTime10d = (hh !== '00' || mi !== '00') ? `${hh}:${mi}` : conversation.pendingBookingSlots.time;
+                                if (newDate10d !== conversation.pendingBookingSlots.date || newTime10d !== conversation.pendingBookingSlots.time) {
+                                    await Conversation.updateOne({ _id: conversation._id }, {
+                                        $set: { 'pendingBookingSlots.date': newDate10d, 'pendingBookingSlots.time': newTime10d, 'pendingBookingSlots.savedAt': new Date() }
+                                    });
+                                    // Update in-memory so the rest of this request uses the new date
+                                    conversation.pendingBookingSlots.date = newDate10d;
+                                    conversation.pendingBookingSlots.time = newTime10d;
+                                }
+                            }
+                        }
+                    }
+                } catch(e) { /* ignore */ }
             }
 
             // 11. Llamar OpenAI (con function calling si agendamiento activo)
@@ -1099,7 +1165,8 @@ export default class EmbedService {
             });
 
             // 12. Cachear respuesta + limpiar error de OpenAI si había uno
-            advancedRag.cacheResponse(botId, content, response.content);
+            // Don't cache responses for bots with appointment/order flows — they're context-dependent
+            if (!skipCache) advancedRag.cacheResponse(botId, content, response.content);
             if (chatbot.openaiError?.code) {
                 setImmediate(() => Chatbot.updateOne({ _id: chatbot._id }, { $set: { 'openaiError.code': null, 'openaiError.detectedAt': null } }));
             }
