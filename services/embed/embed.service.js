@@ -868,10 +868,16 @@ export default class EmbedService {
                     const tableInfo = conversation.visitorMetadata || {};
                     const isDineInOrder = !!(tableInfo.tableId);
 
-                    // Guard: delivery orders must have an address
+                    // Guard: delivery orders must have an address that came from the user
                     const isDeliveryIntent = !isDineInOrder && args.delivery_address !== 'retiro';
-                    const missingAddress = isDeliveryIntent && (!args.delivery_address || args.delivery_address.trim().length < 5);
-                    if (missingAddress) {
+                    const addrArg = (args.delivery_address || '').trim();
+                    const missingAddress = isDeliveryIntent && addrArg.length < 5;
+                    // Also reject hallucinated addresses: verify address words appear in user messages
+                    const allUserTexts = [content, ...history.filter(m => m.role === 'user').map(m => m.content || '')].join(' ').toLowerCase();
+                    const addrWords = addrArg.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+                    const addrFoundInUserMsgs = addrWords.length > 0 && addrWords.some(w => allUserTexts.includes(w));
+                    const addressHallucinated = isDeliveryIntent && addrArg.length >= 5 && !addrFoundInUserMsgs;
+                    if (missingAddress || addressHallucinated) {
                         const askAddrMsg = await Message.create({ conversationId: conversation._id, chatbotId: chatbot._id, role: 'assistant', content: 'Para procesar tu pedido a domicilio necesito tu dirección completa (calle, número y barrio). ¿Me la indicas?', createdAt: new Date() });
                         return { success: true, data: { botMessage: askAddrMsg } };
                     }
