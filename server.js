@@ -67,6 +67,7 @@ app.use(fileUpload({
 app.use(express.json());
 
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+app.use('/chat', express.static(path.join(process.cwd(), 'public')));
 
 // Public routes (sin autenticación)
 app.use('/api/auth', AuthRoutes);
