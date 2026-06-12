@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Imfluid</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&family=Google+Sans+Display:wght@400;500;700&display=swap"
+    rel="stylesheet">
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0
+    }
+
+    :root {
+      --accent: #FF6B00;
+      --bg: #FF6B00;
+      --bg-input: rgba(255, 255, 255, .07);
+      --font: 'Google Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      --text: #e9e9ec;
+      --muted: rgba(233, 233, 236, .55);
+      --card: rgba(255, 255, 255, .045);
+      --card-border: rgba(255, 255, 255, .08);
+    }
+
+    html,
+    body {
+      height: 100%;
+      overflow: hidden;
+      margin: 0;
+      padding: 0
+    }
+
+    body {
+      font-family: var(--font);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      position: relative;
+      background: var(--bg);
+      --pattern-opacity: 0.45
+    }
+
+    body>*:not(.pattern-layer) {
+      position: relative;
+      z-index: 1
+    }
+
+    .pattern-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      opacity: var(--pattern-opacity);
+      transition: opacity .25s ease
+    }
+
+    .pattern-layer::before,
+    .pattern-layer::after {
+      content: "";
+      position: absolute;
+      inset: -2px;
+      background-position: center
+    }
+
+    .pattern-layer::before {
+      background-image: var(--p-light, none);
+      background-size: var(--tile, 120px) var(--tile, 120px);
+      mix-blend-mode: soft-light
+    }
+
+    .pattern-layer::after {
+      background-image: var(--p-dark, none);
+      background-size: var(--tile, 120px) var(--tile, 120px);
+      mix-blend-mode: overlay;
+      opacity: .6
+    }
+
+    body[data-pattern="dots"] .pattern-layer {
+      --tile: 26px
+    }
+
+    body[data-pattern="dots"] .pattern-layer::before {
+      --p-light: radial-gradient(circle at center, rgba(255, 255, 255, .9) 1.4px, transparent 1.6px)
+    }
+
+    body[data-pattern="dots"] .pattern-layer::after {
+      --p-dark: radial-gradient(circle at center, rgba(0, 0, 0, .9) 1.4px, transparent 1.6px)
+    }
+
+    body[data-pattern="grid"] .pattern-layer {
+      --tile: 54px
+    }
+
+    body[data-pattern="grid"] .pattern-layer::before {
+      --p-light: linear-gradient(rgba(255, 255, 255, .7) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, .7) 1px, transparent 1px)
+    }
+
+    body[data-pattern="grid"] .pattern-layer::after {
+      --p-dark: linear-gradient(rgba(0, 0, 0, .7) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 0, 0, .7) 1px, transparent 1px)
+    }
+
+    body[data-pattern="cross"] .pattern-layer {
+      --tile: 48px
+    }
+
+    body[data-pattern="cross"] .pattern-layer::before {
+      --p-light: linear-gradient(rgba(255, 255, 255, .85) 1.5px, transparent 1.5px), linear-gradient(90deg, rgba(255, 255, 255, .85) 1.5px, transparent 1.5px);
+      -webkit-mask: radial-gradient(circle 7px at center, #000 99%, transparent 100%);
+      mask: radial-gradient(circle 7px at center, #000 99%, transparent 100%);
+      -webkit-mask-size: var(--tile) var(--tile);
+      mask-size: var(--tile) var(--tile)
+    }
+
+    body[data-pattern="cross"] .pattern-layer::after {
+      --p-dark: linear-gradient(rgba(0, 0, 0, .85) 1.5px, transparent 1.5px), linear-gradient(90deg, rgba(0, 0, 0, .85) 1.5px, transparent 1.5px);
+      -webkit-mask: radial-gradient(circle 7px at center, #000 99%, transparent 100%);
+      mask: radial-gradient(circle 7px at center, #000 99%, transparent 100%);
+      -webkit-mask-size: var(--tile) var(--tile);
+      mask-size: var(--tile) var(--tile)
+    }
+
+    body[data-pattern="diagonal"] .pattern-layer::before {
+      --p-light: repeating-linear-gradient(45deg, rgba(255, 255, 255, .5) 0 1px, transparent 1px 14px);
+      background-size: auto
+    }
+
+    body[data-pattern="diagonal"] .pattern-layer::after {
+      --p-dark: repeating-linear-gradient(45deg, rgba(0, 0, 0, .5) 0 1px, transparent 1px 14px);
+      background-size: auto
+    }
+
+    body[data-pattern="topo"] .pattern-layer {
+      --tile: 300px
+    }
+
+    body[data-pattern="topo"] .pattern-layer::before {
+      --p-light: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cg fill='none' stroke='%23ffffff' stroke-width='1.2' opacity='0.85'%3E%3Cpath d='M-20 60 C 60 10 120 110 200 60 S 340 10 420 60'/%3E%3Cpath d='M-20 120 C 60 70 120 170 200 120 S 340 70 420 120'/%3E%3Cpath d='M-20 180 C 60 130 120 230 200 180 S 340 130 420 180'/%3E%3Cpath d='M-20 240 C 60 190 120 290 200 240 S 340 190 420 240'/%3E%3Cpath d='M-20 300 C 60 250 120 350 200 300 S 340 250 420 300'/%3E%3C/g%3E%3C/svg%3E")
+    }
+
+    body[data-pattern="topo"] .pattern-layer::after {
+      --p-dark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cg fill='none' stroke='%23000000' stroke-width='1.2' opacity='0.85'%3E%3Cpath d='M-20 60 C 60 10 120 110 200 60 S 340 10 420 60'/%3E%3Cpath d='M-20 120 C 60 70 120 170 200 120 S 340 70 420 120'/%3E%3Cpath d='M-20 180 C 60 130 120 230 200 180 S 340 130 420 180'/%3E%3Cpath d='M-20 240 C 60 190 120 290 200 240 S 340 190 420 240'/%3E%3Cpath d='M-20 300 C 60 250 120 350 200 300 S 340 250 420 300'/%3E%3C/g%3E%3C/svg%3E")
+    }
+
+    body[data-pattern="doodle"] .pattern-layer {
+      --tile: 220px
+    }
+
+    body[data-pattern="doodle"] .pattern-layer::before {
+      --p-light: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cg fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' opacity='0.9'%3E%3Cpath d='M30 34l4 9 9 4-9 4-4 9-4-9-9-4 9-4z'/%3E%3Crect x='150' y='24' width='34' height='26' rx='8'/%3E%3Cpath d='M158 50l-4 9 10-5'/%3E%3Ccircle cx='52' cy='118' r='4'/%3E%3Ccircle cx='96' cy='150' r='4'/%3E%3Ccircle cx='40' cy='168' r='4'/%3E%3Cpath d='M52 122l44 28M96 150l-56 18'/%3E%3Cpath d='M168 132l3 7 7 3-7 3-3 7-3-7-7-3 7-3z'/%3E%3Ccircle cx='180' cy='186' r='12'/%3E%3Cpath d='M180 178v8l5 3'/%3E%3Cpath d='M104 60c8-6 16 6 0 14-16-8-8-20 0-14z'/%3E%3C/g%3E%3C/svg%3E")
+    }
+
+    body[data-pattern="doodle"] .pattern-layer::after {
+      --p-dark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cg fill='none' stroke='%23000000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' opacity='0.9'%3E%3Cpath d='M30 34l4 9 9 4-9 4-4 9-4-9-9-4 9-4z'/%3E%3Crect x='150' y='24' width='34' height='26' rx='8'/%3E%3Cpath d='M158 50l-4 9 10-5'/%3E%3Ccircle cx='52' cy='118' r='4'/%3E%3Ccircle cx='96' cy='150' r='4'/%3E%3Ccircle cx='40' cy='168' r='4'/%3E%3Cpath d='M52 122l44 28M96 150l-56 18'/%3E%3Cpath d='M168 132l3 7 7 3-7 3-3 7-3-7-7-3 7-3z'/%3E%3Ccircle cx='180' cy='186' r='12'/%3E%3Cpath d='M180 178v8l5 3'/%3E%3Cpath d='M104 60c8-6 16 6 0 14-16-8-8-20 0-14z'/%3E%3C/g%3E%3C/svg%3E")
+    }
+
+    body[data-pattern="hex"] .pattern-layer::before {
+      --p-light: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='100'%3E%3Cg fill='none' stroke='%23ffffff' stroke-width='1.4' opacity='0.8'%3E%3Cpath d='M28 0l28 16v33L28 66 0 49V16z'/%3E%3Cpath d='M28 66l28 16v18M28 66L0 82v18M56 16l28-16M0 16L-28 0'/%3E%3C/g%3E%3C/svg%3E");
+      background-size: 56px 100px
+    }
+
+    body[data-pattern="hex"] .pattern-layer::after {
+      --p-dark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='100'%3E%3Cg fill='none' stroke='%23000000' stroke-width='1.4' opacity='0.8'%3E%3Cpath d='M28 0l28 16v33L28 66 0 49V16z'/%3E%3Cpath d='M28 66l28 16v18M28 66L0 82v18M56 16l28-16M0 16L-28 0'/%3E%3C/g%3E%3C/svg%3E");
+      background-size: 56px 100px
+    }
+
+    body[data-pattern="glow"] .pattern-layer {
+      opacity: calc(var(--pattern-opacity)*1.6)
+    }
+
+    body[data-pattern="glow"] .pattern-layer::before {
+      inset: 0;
+      background: radial-gradient(40% 50% at 18% 22%, rgba(120, 170, 255, .55), transparent 70%), radial-gradient(45% 55% at 82% 30%, rgba(255, 130, 180, .5), transparent 70%), radial-gradient(50% 60% at 70% 85%, rgba(130, 255, 200, .45), transparent 70%), radial-gradient(45% 55% at 25% 88%, rgba(190, 140, 255, .5), transparent 70%);
+      mix-blend-mode: soft-light;
+      filter: blur(8px)
+    }
+
+    body[data-pattern="glow"] .pattern-layer::after {
+      display: none
+    }
+
+    body[data-pattern="none"] .pattern-layer {
+      display: none
+    }
+
+    #welcome {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 40px 24px 20px;
+      gap: 28px;
+      transition: opacity .35s ease, transform .35s ease;
+      overflow-y: auto
+    }
+
+    #welcome.hidden {
+      display: none
+    }
+
+    .welcome-avatar-wrap {
+      position: relative;
+      width: 76px;
+      height: 76px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0
+    }
+
+    .welcome-avatar-wrap::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 24px;
+      background: conic-gradient(from 0deg, #4285f4, #ea4335, #fbbc05, #34a853, #4285f4);
+      animation: spin 4s linear infinite;
+      z-index: 0
+    }
+
+    .welcome-avatar {
+      width: 70px;
+      height: 70px;
+      border-radius: 22px;
+      display: grid;
+      place-items: center;
+      font-size: 36px;
+      position: relative;
+      z-index: 1
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg)
+      }
+    }
+
+    .welcome-title {
+      font-family: 'Google Sans Display', var(--font);
+      font-size: clamp(28px, 5vw, 44px);
+      font-weight: 500;
+      text-align: center;
+      letter-spacing: -.5px;
+      line-height: 1.2;
+      background: linear-gradient(135deg, var(--text) 0%, rgba(233, 233, 236, .6) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      width: 100%;
+      max-width: 640px
+    }
+
+    .suggestions-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      width: 100%;
+      max-width: 600px;
+      justify-content: center;
+      align-items: stretch
+    }
+
+    .suggestion-card {
+      flex: 0 0 calc(50% - 5px);
+      max-width: calc(50% - 5px);
+      background: rgba(255, 255, 255, .18);
+      border: 1px solid rgba(255, 255, 255, .28);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border-radius: 14px;
+      padding: 16px 18px;
+      cursor: pointer;
+      transition: background .2s, border-color .2s, transform .15s;
+      text-align: left
+    }
+
+    .suggestion-card:hover {
+      background: rgba(255, 255, 255, .26);
+      border-color: rgba(255, 255, 255, .38);
+      transform: translateY(-2px)
+    }
+
+    .suggestion-card .icon {
+      font-size: 20px;
+      margin-bottom: 8px;
+      display: block
+    }
+
+    .suggestion-card .text {
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.4;
+      font-weight: 400
+    }
+
+    #chat-screen {
+      display: none;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      opacity: 0;
+      transition: opacity .3s ease;
+    }
+
+    #chat-screen.visible {
+      display: flex;
+      opacity: 1;
+    }
+
+    #chat-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 24px;
+      border-bottom: 1px solid var(--card-border);
+      flex-shrink: 0
+    }
+
+    #chat-header .bot-chip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      padding: 6px 14px 6px 8px;
+      font-size: 13px;
+      font-weight: 500
+    }
+
+    #chat-header .bot-chip .avatar {
+      width: 24px;
+      height: 24px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      font-size: 14px
+    }
+
+    #chat-header .online {
+      margin-left: auto;
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 5px
+    }
+
+    #chat-header .online span {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #34a853;
+      display: inline-block
+    }
+
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255, 255, 255, .1) transparent
+    }
+
+    #messages::-webkit-scrollbar {
+      width: 4px
+    }
+
+    #messages::-webkit-scrollbar-track {
+      background: transparent
+    }
+
+    #messages::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, .1);
+      border-radius: 2px
+    }
+
+    .msg-row {
+      display: flex;
+      gap: 12px;
+      max-width: 800px;
+      margin: 0 auto;
+      width: 100%;
+      animation: msgIn .22s ease both;
+    }
+
+    .msg-row.user { justify-content: flex-end }
+    .msg-row.bot  { justify-content: flex-start; align-items: flex-start }
+
+    @keyframes msgIn {
+      from { opacity: 0; transform: translateY(10px) }
+      to   { opacity: 1; transform: translateY(0) }
+    }
+
+    .msg-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-size: 16px;
+      flex-shrink: 0;
+      margin-top: 2px;
+      border: 2px solid rgba(255,255,255,.25);
+    }
+
+    .bubble {
+      padding: 13px 18px;
+      font-size: 15px;
+      line-height: 1.7;
+      word-break: break-word;
+      max-width: 75%
+    }
+
+    .bubble.user {
+      background: rgba(255,255,255,.18);
+      border: 1px solid rgba(255,255,255,.25);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border-radius: 20px 4px 20px 20px;
+      color: var(--text)
+    }
+
+    .bubble.bot {
+      background: rgba(0,0,0,.18);
+      border: 1px solid rgba(0,0,0,.12);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      color: var(--text);
+      border-radius: 4px 20px 20px 20px;
+    }
+    .bubble.bot p { margin: 0 0 8px }
+    .bubble.bot p:last-child { margin: 0 }
+    .bubble.bot strong { font-weight: 600; opacity: .95 }
+    .bubble.bot ul, .bubble.bot ol { margin: 6px 0; padding-left: 18px }
+    .bubble.bot li { margin: 3px 0 }
+    .bubble.bot code { background: rgba(0,0,0,.2); border-radius: 4px; padding: 1px 6px; font-size: 13px; font-family: monospace }
+
+    .typing-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      max-width: 800px;
+      margin: 0 auto;
+      width: 100%;
+      animation: msgIn .22s ease both;
+    }
+
+    .typing-bubble {
+      background: rgba(0,0,0,.18);
+      border: 1px solid rgba(0,0,0,.12);
+      backdrop-filter: blur(10px);
+      border-radius: 4px 20px 20px 20px;
+      padding: 13px 18px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .typing-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--text);
+      opacity: .4;
+      animation: tdot 1.4s infinite;
+    }
+    .typing-dot:nth-child(2) { animation-delay: .2s }
+    .typing-dot:nth-child(3) { animation-delay: .4s }
+
+    @keyframes tdot {
+      0%, 60%, 100% { opacity: .25; transform: scale(1) }
+      30%            { opacity: .8;  transform: scale(1.3) }
+    }
+
+    #input-container {
+      flex-shrink: 0;
+      padding: 12px 24px 28px;
+      background: transparent
+    }
+
+    #input-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(0,0,0,.15);
+      border: 1px solid rgba(0,0,0,.18);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-radius: 28px;
+      padding: 10px 10px 10px 20px;
+      max-width: 800px;
+      width: 100%;
+      margin: 0 auto;
+      transition: border-color .2s, box-shadow .2s
+    }
+
+    #input-wrap:focus-within {
+      border-color: rgba(255,255,255,.3);
+      box-shadow: 0 0 0 3px rgba(255,255,255,.08)
+    }
+
+    #msg-input {
+      flex: 1;
+      border: none;
+      background: transparent;
+      resize: none;
+      font-size: 15px;
+      font-family: var(--font);
+      line-height: 1.5;
+      outline: none;
+      max-height: 160px;
+      overflow-y: auto;
+      color: var(--text);
+      caret-color: var(--accent);
+      padding: 6px 0
+    }
+
+    #msg-input::placeholder { color: var(--muted) }
+
+    #send-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: none;
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      background: rgba(255,255,255,.08);
+      color: var(--muted);
+      transition: all .22s;
+      flex-shrink: 0
+    }
+
+    #send-btn.active {
+      background: rgba(255,255,255,.9);
+      color: #111;
+      box-shadow: 0 2px 16px rgba(0,0,0,.25);
+      transform: scale(1.05)
+    }
+
+    #send-btn:disabled { cursor: not-allowed }
+
+    @media(max-width:600px) {
+      .suggestions-grid {
+        grid-template-columns: 1fr
+      }
+
+      .welcome-title {
+        font-size: 26px
+      }
+
+      #messages {
+        padding: 16px
+      }
+
+      #input-container {
+        padding: 12px 16px 20px
+      }
+    }
+  </style>
+</head>
+
+<body data-pattern="dots">
+  <div class="pattern-layer"></div>
+  <div id="welcome">
+    <div class="welcome-avatar-wrap">
+      <div class="welcome-avatar" id="welcome-avatar">🔧</div>
+    </div>
+    <div id="welcome-greeting" style="font-size:15px;color:var(--muted);letter-spacing:.3px;">Hola, soy el agente IA de
+      Imfluid</div>
+    <h1 class="welcome-title" id="welcome-title">¿En qué puedo ayudarte?</h1>
+    <div class="suggestions-grid" id="suggestions"></div>
+  </div>
+  <div id="chat-screen">
+    <div id="chat-header">
+      <div class="bot-chip">
+        <div class="avatar" id="header-avatar">🔧</div>
+        <span id="header-name">Imfluid</span>
+      </div>
+      <div class="online"><span></span> En línea</div>
+    </div>
+    <div id="messages"></div>
+  </div>
+  <div id="input-container">
+    <div id="input-wrap">
+      <textarea id="msg-input" placeholder="Pregunta lo que quieras..." rows="1" oninput="autoResize(this);toggleSend()"
+        onkeydown="handleKey(event)"></textarea>
+      <button id="send-btn" onclick="sendMessage()" disabled>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+        </svg>
+      </button>
+    </div>
+  </div>
+  <script>
+    function luminance(hex) { let m = hex.replace('#', ''); if (m.length === 3) m = m.split('').map(c => c + c).join(''); const r = parseInt(m.substr(0, 2), 16) / 255, g = parseInt(m.substr(2, 2), 16) / 255, b = parseInt(m.substr(4, 2), 16) / 255; return 0.2126 * r + 0.7152 * g + 0.0722 * b }
+    function applyContrast(hex, root = document.documentElement) { const lum = luminance(hex); if (lum > 0.55) { root.style.setProperty('--text', '#16181d'); root.style.setProperty('--muted', 'rgba(20,22,28,.55)'); root.style.setProperty('--card', 'rgba(0,0,0,.06)'); root.style.setProperty('--card-border', 'rgba(0,0,0,.12)'); root.style.setProperty('--bg-input', 'rgba(0,0,0,.06)') } else { root.style.setProperty('--text', '#e9e9ec'); root.style.setProperty('--muted', 'rgba(233,233,236,.55)'); root.style.setProperty('--card', 'rgba(255,255,255,.045)'); root.style.setProperty('--card-border', 'rgba(255,255,255,.08)'); root.style.setProperty('--bg-input', 'rgba(255,255,255,.07)') } }
+
+    const EMBED_KEY = '56af96f363403b0726dbeb66e20f2e34';
+    const API_URL = 'https://bezpian.onrender.com';
+    const visitorId = Math.random().toString(36).substring(2, 10);
+    let convId = null, botId = null, accentColor = '#FF6B00', isLoading = false, chatStarted = false;
+
+    applyContrast('#FF6B00');
+
+    async function api(method, path, body) { const r = await fetch(API_URL + path, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }); return r.json() }
+
+    async function init() {
+      try { const info = await api('GET', '/api/embed/bot-info?embedKey=' + EMBED_KEY); if (info.success) applyBotInfo(info.data) } catch (e) { }
+      document.getElementById('msg-input').disabled = false;
+      document.getElementById('msg-input').focus();
+    }
+
+    async function ensureConversation() {
+      if (convId) return true;
+      try { const res = await api('POST', '/api/embed/conversations', { embedKey: EMBED_KEY, visitorId }); if (res.success) { convId = res.data.conversationId; botId = res.data.botId; return true } } catch { }
+      return false;
+    }
+
+    function buildSuggestions(suggestions) {
+      const grid = document.getElementById('suggestions');
+      grid.innerHTML = '';
+      (suggestions || []).forEach(s => {
+        const card = document.createElement('div');
+        card.className = 'suggestion-card';
+        card.innerHTML = '<span class="icon">' + s.icon + '</span><span class="text">' + s.text + '</span>';
+        card.onclick = () => sendText(s.text);
+        grid.appendChild(card);
+      });
+    }
+
+    function applyBotInfo(data) {
+      accentColor = data.widget?.color || '#FF6B00';
+      const av = data.widget?.avatar || '🔧';
+      const nm = data.name || 'Imfluid';
+      const pt = data.widget?.pattern || 'dots';
+      document.body.style.setProperty('--bg', accentColor);
+      document.body.style.setProperty('--accent', accentColor);
+      document.body.setAttribute('data-pattern', pt);
+      applyContrast(accentColor);
+      document.getElementById('welcome-avatar').textContent = av;
+      document.getElementById('welcome-avatar').style.background = accentColor + '22';
+      document.getElementById('welcome-avatar').style.boxShadow = '0 0 0 2px ' + accentColor;
+      document.getElementById('welcome-greeting').textContent = 'Hola, soy el agente IA de ' + nm;
+      document.title = nm;
+      document.getElementById('header-avatar').textContent = av;
+      document.getElementById('header-avatar').style.background = accentColor + '33';
+      document.getElementById('header-name').textContent = nm;
+      if (data.suggestions) buildSuggestions(data.suggestions);
+    }
+
+    function startChat() { if (chatStarted) return; chatStarted = true; const cs = document.getElementById('chat-screen'); cs.style.display = 'flex'; requestAnimationFrame(() => requestAnimationFrame(() => cs.classList.add('visible'))); document.getElementById('welcome').classList.add('hidden'); }
+
+    async function sendMessage() { const input = document.getElementById('msg-input'); const text = input.value.trim(); if (!text || isLoading) return; startChat(); input.value = ''; input.style.height = 'auto'; toggleSend(); addMessage('user', text); showTyping(); isLoading = true; const ok = await ensureConversation(); if (!ok) { hideTyping(); addMessage('bot', 'Error al conectar. Intenta de nuevo.'); isLoading = false; return; } try { const res = await api('POST', '/api/embed/messages', { conversationId: convId, content: text, botId }); hideTyping(); if (res.success) addMessage('bot', res.data.botMessage.content); else addMessage('bot', 'Error al procesar tu mensaje.') } catch { hideTyping(); addMessage('bot', 'Error de conexión. Intenta de nuevo.') } finally { isLoading = false; input.focus() } }
+
+    function sendText(text) { const input = document.getElementById('msg-input'); input.value = text; toggleSend(); sendMessage() }
+
+    function renderMarkdown(text) {
+      let h = text
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g,'<em>$1</em>')
+        .replace(/`([^`]+)`/g,'<code>$1</code>');
+      const lines = h.split('\n');
+      const out = []; let inList = false;
+      for (const ln of lines) {
+        const li = ln.match(/^[-*•]\s+(.*)/);
+        if (li) { if (!inList) { out.push('<ul>'); inList = true } out.push('<li>' + li[1] + '</li>') }
+        else { if (inList) { out.push('</ul>'); inList = false } out.push('<p>' + ln + '</p>') }
+      }
+      if (inList) out.push('</ul>');
+      return out.join('');
+    }
+    function getBotAvatar() { return document.getElementById('header-avatar').textContent || '🤖' }
+
+    function addMessage(role, content) {
+      const msgs = document.getElementById('messages');
+      const row = document.createElement('div'); row.className = 'msg-row ' + role;
+      if (role === 'bot') {
+        const icon = document.createElement('div'); icon.className = 'msg-icon';
+        icon.textContent = getBotAvatar(); icon.style.background = accentColor + '44';
+        row.appendChild(icon);
+      }
+      const bubble = document.createElement('div'); bubble.className = 'bubble ' + role;
+      if (role === 'bot') bubble.innerHTML = renderMarkdown(content);
+      else bubble.textContent = content;
+      row.appendChild(bubble); msgs.appendChild(row); msgs.scrollTop = msgs.scrollHeight;
+    }
+
+    let typingEl = null;
+    function showTyping() {
+      const msgs = document.getElementById('messages');
+      const row = document.createElement('div'); row.className = 'typing-row';
+      const icon = document.createElement('div'); icon.className = 'msg-icon';
+      icon.textContent = getBotAvatar(); icon.style.background = accentColor + '44';
+      const tb = document.createElement('div'); tb.className = 'typing-bubble';
+      tb.innerHTML = '<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>';
+      row.appendChild(icon); row.appendChild(tb); typingEl = row; msgs.appendChild(row); msgs.scrollTop = msgs.scrollHeight;
+    }
+    function hideTyping() { if (typingEl) { typingEl.remove(); typingEl = null } }
+    function handleKey(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }
+    function autoResize(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 160) + 'px' }
+    function toggleSend() { const val = document.getElementById('msg-input').value.trim(); const btn = document.getElementById('send-btn'); btn.disabled = !val; btn.classList.toggle('active', !!val) }
+
+    document.getElementById('msg-input').disabled = true;
+    init();
+  </script>
+</body>
+
+</html>
