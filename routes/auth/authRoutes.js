@@ -1,9 +1,14 @@
 import express from 'express';
 import AuthController from '../../controllers/auth/auth.controller.js';
 import ShopifyOAuthController from '../../controllers/auth/shopify-oauth.controller.js';
+import { googleRedirect, googleCallback } from '../../controllers/auth/google-oauth.controller.js';
 
 const router = express.Router();
 const authController = new AuthController();
+
+// Google OAuth
+router.get('/google',          googleRedirect);
+router.get('/google/callback', googleCallback);
 
 // Public endpoints
 router.post('/signup', authController.signup);

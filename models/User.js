@@ -2,7 +2,8 @@ import mongoose from 'mongoose';
 
 const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true, lowercase: true },
-  passwordHash: { type: String, required: true },
+  passwordHash: { type: String, default: null },
+  googleId: { type: String, default: null },
   emailVerified: { type: Boolean, default: false },
   emailVerificationToken: String,
   passwordResetToken: String,
