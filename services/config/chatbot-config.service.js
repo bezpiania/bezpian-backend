@@ -252,7 +252,8 @@ ${payments ? `💳 FORMAS DE PAGO: ${payments}` : ''}`;
 DISPONIBILIDAD POR ESPECIALISTA:\n${availabilitySummary}
 RECURSOS: \n${resourceSummary}
 DATOS A RECOPILAR: \n${reqFields}\n${optFields}
-FLUJO: Pregunta qué servicio desea → pregunta con qué especialista → pregunta fecha y hora → pide nombre y teléfono → muestra resumen → espera SÍ → llama book_appointment`;
+FLUJO: Pregunta qué servicio desea → pregunta con qué especialista → pregunta fecha y hora → pide nombre y teléfono → muestra resumen → espera SÍ → llama book_appointment
+CANCELACIONES: Si el cliente quiere cancelar o modificar una reserva, indícale que debe contactar directamente al local por teléfono o en persona. No puedes cancelar reservas desde este chat.`;
       } else if (!calEnabled) {
         prompt += `\n\n📅 RESERVAS: No gestionamos reservas por este canal.`;
       }
@@ -265,7 +266,12 @@ FLUJO: Pregunta qué servicio desea → pregunta con qué especialista → pregu
 Modalidades: ${modes}
 ${d.allowDelivery ? `Costo: ${d.deliveryCost || 0} | Tiempo: ~${d.estimatedMinutes || 45} min | Mínimo: ${d.minimumOrder || 0}` : ''}
 ${d.zones?.length ? `Zonas: ${d.zones.join(', ')}` : ''}
-FLUJO: Pregunta retiro o delivery → arma pedido → pregunta observación por plato → resumen → create_order`;
+REGLAS CRÍTICAS DE PEDIDOS:
+- En cuanto tengas los PRODUCTOS + DIRECCIÓN DE ENTREGA (o "retiro"), llama create_order INMEDIATAMENTE. No hagas preguntas adicionales.
+- Si el usuario pide delivery pero no dio dirección, pide SOLO la dirección. Nada más.
+- NO pidas confirmación adicional ni hagas resumen antes de llamar create_order — el sistema lo muestra automáticamente.
+- NO digas "voy a registrar" o "procederé a" — simplemente llama create_order.
+- Si el usuario agrega más productos o cambia la dirección, llama create_order de nuevo con los datos actualizados.`;
       } else if (d !== undefined) {
         prompt += `\n\n🚚 DELIVERY: No ofrecemos delivery por el momento.`;
       }

@@ -107,7 +107,10 @@ export default class AdvancedRAGService {
    */
   async searchDocumentsByKeyword(chatbotId, query, limit = 5) {
     try {
-      const searchRegex = new RegExp(query.split(' ').join('|'), 'i');
+      const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const safeTerms = query.trim().split(/\s+/).filter(w => w.length > 2).map(escapeRe);
+      if (safeTerms.length === 0) return [];
+      const searchRegex = new RegExp(safeTerms.join('|'), 'i');
 
       const chunks = await DocumentChunk.find({
         chatbotId,
@@ -322,10 +325,16 @@ export default class AdvancedRAGService {
 
       // FALLBACK: Si Full-Text Search no encontró nada, usar búsqueda simple por palabras clave
       console.log('⚠️ [KEYWORD] Full-text search empty, trying regex fallback');
+      // Escape special regex characters to avoid "Invalid regular expression" errors
+      // e.g. phone numbers like +56912345678 contain + which breaks regex
+      const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const cleanQuery = query
         .trim()
         .split(/\s+/)
-        .filter(w => w.length > 0);
+        .filter(w => w.length > 2)   // skip very short words (es, mi, un, etc.)
+        .map(escapeRegex);
+
+      if (cleanQuery.length === 0) return [];
 
       const fallbackProducts = await Product.find({
         chatbotId,

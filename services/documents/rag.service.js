@@ -30,8 +30,11 @@ class RAGService {
             const chunkText = chunk.text.toLowerCase();
 
             queryTerms.forEach(term => {
-              const matches = (chunkText.match(new RegExp(term, 'g')) || []).length;
-              score += matches;
+              try {
+                const safeTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const matches = (chunkText.match(new RegExp(safeTerm, 'g')) || []).length;
+                score += matches;
+              } catch(e) { /* skip invalid term */ }
             });
 
             return {

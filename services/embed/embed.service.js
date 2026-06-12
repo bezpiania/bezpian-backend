@@ -264,7 +264,7 @@ export default class EmbedService {
             // 2. Verificar cache de respuesta
             // SKIP cache for chatbots with appointments or orders active — responses are conversation-specific
             const hasAppointmentFlow = !!(chatbot.features?.appointments && chatbot.appointmentFields?.length > 0);
-            const hasOrderFlow = !!(chatbot.features?.orders);
+            const hasOrderFlow = !!(chatbot.features?.orders || chatbot.features?.sales || chatbot.deliveryConfig?.enabled);
             const skipCache = hasAppointmentFlow || hasOrderFlow;
             const cachedResponse = skipCache ? null : advancedRag.getCachedResponse(botId, content);
             if (cachedResponse) {
@@ -531,7 +531,7 @@ export default class EmbedService {
                                         status: 'scheduled',
                                     });
                                     await Chatbot.updateOne({ _id: chatbot._id }, { $inc: { 'stats.totalAppointments': 1 } });
-                                    await Conversation.updateOne({ _id: conversation._id }, { $set: { outcome: 'appointment', pendingBookingSlots: null } });
+                                    await Conversation.updateOne({ _id: conversation._id }, { $set: { outcome: 'appointment' }, $unset: { pendingBookingSlots: '' } });
                                     const confirmedDateNow = scheduledAtNow.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
                                     const confirmMsg = await Message.create({ conversationId: conversation._id, chatbotId: chatbot._id, role: 'assistant', content: `✅ ¡Reserva confirmada, ${cfNow['name']}! Te esperamos el **${confirmedDateNow.charAt(0).toUpperCase() + confirmedDateNow.slice(1)} a las ${slotsNow.time}** (${slotsNow.guestCount || 1} persona${(slotsNow.guestCount||1) !== 1 ? 's' : ''}). ¿Hay algo más en que pueda ayudarte?`, createdAt: new Date() });
                                     return { success: true, data: { botMessage: confirmMsg } };
@@ -588,8 +588,9 @@ export default class EmbedService {
             const activeResources = calEnabled ? await Resource.find({ chatbotId: chatbot._id, isActive: true }) : [];
             const appointmentTools = activeResources.length > 0 ? [buildAppointmentTool(chatbot)] : [];
             const isDineIn = !!(conversation.visitorMetadata?.tableId);
-            const deliveryTools = features.sales && (chatbot.deliveryConfig?.enabled || isDineIn) ? [buildOrderTool(chatbot)] : [];
-            const billTools     = features.sales && isDineIn ? [REQUEST_BILL_TOOL] : [];
+            const deliveryEnabled = !!(features.sales || chatbot.deliveryConfig?.enabled);
+            const deliveryTools = deliveryEnabled && (chatbot.deliveryConfig?.enabled || isDineIn) ? [buildOrderTool(chatbot)] : [];
+            const billTools     = deliveryEnabled && isDineIn ? [REQUEST_BILL_TOOL] : [];
             const quoteTools    = features.quotes && (chatbot.businessType === 'store' && chatbot.quoteConfig?.enabled) ? [GENERATE_QUOTE_TOOL] : [];
             const allTools = [...appointmentTools, ...deliveryTools, ...billTools, ...quoteTools];
 
@@ -867,6 +868,38 @@ export default class EmbedService {
                     const tableInfo = conversation.visitorMetadata || {};
                     const isDineInOrder = !!(tableInfo.tableId);
 
+                    // Guard: delivery orders must have an address
+                    const isDeliveryIntent = !isDineInOrder && args.delivery_address !== 'retiro';
+                    const missingAddress = isDeliveryIntent && (!args.delivery_address || args.delivery_address.trim().length < 5);
+                    if (missingAddress) {
+                        const askAddrMsg = await Message.create({ conversationId: conversation._id, chatbotId: chatbot._id, role: 'assistant', content: 'Para procesar tu pedido a domicilio necesito tu dirección completa (calle, número y barrio). ¿Me la indicas?', createdAt: new Date() });
+                        return { success: true, data: { botMessage: askAddrMsg } };
+                    }
+
+                    // Guard: if there's already a 'new' order for this conversation, update it instead of creating a new one
+                    const existingOrder = await Order.findOne({ conversationId: conversation._id, status: 'new' }).lean();
+                    if (existingOrder) {
+                        // Update the existing order with latest data from AI (address, name, phone, items)
+                        const updItems = args.items.map(i => ({ name: i.name, quantity: i.quantity, unitPrice: i.unit_price, totalPrice: i.unit_price * i.quantity, notes: i.notes || '', variant: i.variant || '', productId: i.product_id || null }));
+                        const updSubtotal = updItems.reduce((s, i) => s + i.totalPrice, 0);
+                        const updDeliveryCost = isDineInOrder ? 0 : (delivery.deliveryCost || 0);
+                        const updTotal = updSubtotal + updDeliveryCost;
+                        const updAddr = isDineInOrder ? `Mesa: ${tableInfo.tableName}` : (args.delivery_address || existingOrder.deliveryAddress || '');
+                        await Order.updateOne({ _id: existingOrder._id }, { $set: {
+                            items: updItems, subtotal: updSubtotal, deliveryCost: updDeliveryCost, total: updTotal,
+                            deliveryAddress: updAddr,
+                            customerName: args.customer_name || existingOrder.customerName || '',
+                            customerPhone: args.customer_phone || existingOrder.customerPhone || '',
+                            notes: args.notes || existingOrder.notes || '',
+                        }});
+                        const updItemsText = updItems.map(i => `${i.quantity}× ${i.name}${i.variant ? ` [${i.variant}]` : ''}`).join(', ');
+                        response.content = isDineInOrder
+                            ? `✅ ¡Pedido actualizado! 📋 **Pedido #${existingOrder.orderNumber}:** ${updItemsText}\n💰 **Total:** Bs. ${updTotal.toLocaleString()}`
+                            : `✅ ¡Pedido confirmado! 🎉\n\n📦 **Pedido #${existingOrder.orderNumber}:** ${updItemsText}\n📍 **${updAddr}**\n💰 **Total:** Bs. ${updTotal.toLocaleString()}${updDeliveryCost > 0 ? ` (incluye Bs. ${updDeliveryCost} delivery)` : ''}\n⏱ **Tiempo estimado:** ${delivery.estimatedMinutes || 45} min\n\n¡Estamos en eso! ¿Algo más?`;
+                        const updMsg = await Message.create({ conversationId: conversation._id, chatbotId: chatbot._id, role: 'assistant', content: response.content, createdAt: new Date() });
+                        return { success: true, data: { botMessage: updMsg } };
+                    }
+
                     const items = args.items.map(i => ({
                         name:       i.name,
                         quantity:   i.quantity,
@@ -1116,7 +1149,7 @@ export default class EmbedService {
                                             status: 'scheduled',
                                         });
                                         await Chatbot.updateOne({ _id: chatbot._id }, { $inc: { 'stats.totalAppointments': 1 } });
-                                        await Conversation.updateOne({ _id: conversation._id }, { $set: { outcome: 'appointment', pendingBookingSlots: null } });
+                                        await Conversation.updateOne({ _id: conversation._id }, { $set: { outcome: 'appointment' }, $unset: { pendingBookingSlots: '' } });
                                         const confirmedDate3 = scheduledAt2.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
                                         const displayName3 = cf['name'] || '';
                                         response.content = `✅ ¡Reserva confirmada${displayName3 ? `, ${displayName3}` : ''}! Te esperamos el **${confirmedDate3.charAt(0).toUpperCase() + confirmedDate3.slice(1)} a las ${slotsTime}** (${guestCnt} persona${guestCnt !== 1 ? 's' : ''}). ¿Hay algo más en que pueda ayudarte?`;
