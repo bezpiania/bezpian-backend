@@ -1927,7 +1927,7 @@ export default class EmbedService {
             // El audio no debe leer markdown ni listas largas: pedir respuestas conversacionales
             instructions += '\n\nIMPORTANTE: Estás en una llamada de voz. Habla de forma natural y conversacional, sin markdown, sin viñetas ni listas largas. Sé breve y claro.';
 
-            const model = process.env.OPENAI_REALTIME_MODEL || 'gpt-4o-realtime-preview';
+            const model = 'gpt-4o-realtime-preview';
             const voice = chatbot.voiceSettings?.voice || 'alloy';
 
             const resp = await fetch('https://api.openai.com/v1/realtime/sessions', {
