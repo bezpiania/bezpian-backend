@@ -1949,7 +1949,9 @@ export default class EmbedService {
             if (!resp.ok) {
                 const errText = await resp.text().catch(() => '');
                 logger.error('mintRealtimeToken: OpenAI rechazó la sesión', { status: resp.status, body: errText });
-                return { success: false, message: 'No se pudo iniciar la sesión de voz con OpenAI' };
+                let detail = errText;
+                try { detail = JSON.parse(errText)?.error?.message || errText; } catch (_) {}
+                return { success: false, message: `OpenAI ${resp.status}: ${detail || 'sesión rechazada'}` };
             }
 
             const session = await resp.json();
