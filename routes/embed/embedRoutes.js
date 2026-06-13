@@ -17,5 +17,6 @@ router.get('/table/:tableToken', rateLimiter.middleware, embedController.getTabl
 router.get('/products', rateLimiter.middleware, embedController.searchProducts);
 router.get('/quote-fields', rateLimiter.middleware, embedController.getQuoteFields);
 router.get('/bot-info',    rateLimiter.middleware, embedController.getBotInfo);
+router.post('/realtime-token', rateLimiter.middleware, embedController.getRealtimeToken);
 
 export default router;

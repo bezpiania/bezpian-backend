@@ -115,6 +115,14 @@ const chatbotSchema = new mongoose.Schema({
     similarityThreshold: { type: Number, default: null },  // null = use global default (0.5)
   },
 
+  // Widget de voz (OpenAI Realtime API) — independiente del chat de texto
+  voiceSettings: {
+    enabled: { type: Boolean, default: false },
+    voice:   { type: String, default: 'alloy', enum: ['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse'] },
+    speed:   { type: Number, default: 1.0, min: 0.25, max: 1.5 },
+    greeting: { type: String, default: '' },  // saludo hablado al conectar; vacío = usa welcomeMessage
+  },
+
   productLoadingMethod: {
     type: String,
     enum: ['manual', 'shopify', 'jumpseller', 'woocommerce', 'custom_api'],

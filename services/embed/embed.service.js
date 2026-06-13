@@ -1888,6 +1888,93 @@ export default class EmbedService {
         }
     };
 
+    /**
+     * Genera un token efímero de la Realtime API de OpenAI para el widget de voz.
+     * La API key real NUNCA sale del backend: el navegador solo recibe el client_secret
+     * (vive ~1 min) y lo usa para abrir la conexión WebRTC directa con OpenAI.
+     */
+    mintRealtimeToken = async (embedKey) => {
+        try {
+            if (!embedKey) return { success: false, message: 'embedKey requerido' };
+
+            const chatbot = await Chatbot.findOne({ embedKey });
+            if (!chatbot) return { success: false, message: 'Chatbot no encontrado' };
+
+            if (chatbot.voiceSettings?.enabled === false) {
+                return { success: false, message: 'El widget de voz no está habilitado para este chatbot' };
+            }
+
+            const apiKey = chatbot.openaiApiKey; // getter desencripta
+            if (!apiKey) {
+                return { success: false, message: 'Este chatbot no tiene API key de OpenAI configurada' };
+            }
+
+            // Instrucciones = mismo cerebro que el chat de texto (empresa, tono, reglas, RAG-less base)
+            let instructions = '';
+            try {
+                instructions = await chatbotConfigService.buildSystemPrompt(chatbot.workspaceId, chatbot._id);
+            } catch (e) {
+                logger.warn('mintRealtimeToken: no se pudo construir systemPrompt, usando fallback', { error: e.message });
+                instructions = `Eres ${chatbot.name}, un asistente de voz amable y conciso. Responde en español de forma natural y breve.`;
+            }
+
+            const greeting = chatbot.voiceSettings?.greeting?.trim()
+                || chatbot.personality?.welcomeMessage?.trim()
+                || '';
+            if (greeting) {
+                instructions += `\n\nAl iniciar la conversación, saluda diciendo: "${greeting}"`;
+            }
+            // El audio no debe leer markdown ni listas largas: pedir respuestas conversacionales
+            instructions += '\n\nIMPORTANTE: Estás en una llamada de voz. Habla de forma natural y conversacional, sin markdown, sin viñetas ni listas largas. Sé breve y claro.';
+
+            const model = process.env.OPENAI_REALTIME_MODEL || 'gpt-4o-realtime-preview';
+            const voice = chatbot.voiceSettings?.voice || 'alloy';
+
+            const resp = await fetch('https://api.openai.com/v1/realtime/sessions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json',
+                    'OpenAI-Beta': 'realtime=v1',
+                },
+                body: JSON.stringify({
+                    model,
+                    voice,
+                    instructions,
+                    modalities: ['audio', 'text'],
+                    input_audio_transcription: { model: 'whisper-1' },
+                }),
+            });
+
+            if (!resp.ok) {
+                const errText = await resp.text().catch(() => '');
+                logger.error('mintRealtimeToken: OpenAI rechazó la sesión', { status: resp.status, body: errText });
+                return { success: false, message: 'No se pudo iniciar la sesión de voz con OpenAI' };
+            }
+
+            const session = await resp.json();
+            const clientSecret = session?.client_secret?.value;
+            if (!clientSecret) {
+                return { success: false, message: 'OpenAI no devolvió un token efímero válido' };
+            }
+
+            return {
+                success: true,
+                data: {
+                    token: clientSecret,
+                    expiresAt: session?.client_secret?.expires_at || null,
+                    model,
+                    voice,
+                    botName: chatbot.name,
+                    greeting,
+                },
+            };
+        } catch (error) {
+            logger.error('mintRealtimeToken error', { error: error.message });
+            return { success: false, message: error.message };
+        }
+    };
+
     getEmbedCode = async (botId) => {
         try {
             const chatbot = await Chatbot.findById(botId).select('_id name widget embedKey');

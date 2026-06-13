@@ -96,6 +96,17 @@ export default class EmbedController {
         }
     };
 
+    getRealtimeToken = async (req, res) => {
+        try {
+            const embedKey = req.query.embedKey || req.body?.embedKey;
+            const response = await embedService.mintRealtimeToken(embedKey);
+            return res.status(response.success ? 200 : 400).json(response);
+        } catch (error) {
+            console.error('❌ EmbedController.getRealtimeToken:', error);
+            return res.status(500).json({ success: false, message: 'Error al iniciar sesión de voz' });
+        }
+    };
+
     searchProducts = async (req, res) => {
         try {
             const response = await embedService.searchProducts(req.query.embedKey, req.query.q);
