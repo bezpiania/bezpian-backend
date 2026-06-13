@@ -1927,22 +1927,26 @@ export default class EmbedService {
             // El audio no debe leer markdown ni listas largas: pedir respuestas conversacionales
             instructions += '\n\nIMPORTANTE: Estás en una llamada de voz. Habla de forma natural y conversacional, sin markdown, sin viñetas ni listas largas. Sé breve y claro.';
 
-            const model = 'gpt-4o-realtime-preview';
+            const model = 'gpt-realtime';
             const voice = chatbot.voiceSettings?.voice || 'alloy';
 
-            const resp = await fetch('https://api.openai.com/v1/realtime/sessions', {
+            // Endpoint GA: /v1/realtime/client_secrets con objeto session anidado
+            const resp = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${apiKey}`,
                     'Content-Type': 'application/json',
-                    'OpenAI-Beta': 'realtime=v1',
                 },
                 body: JSON.stringify({
-                    model,
-                    voice,
-                    instructions,
-                    modalities: ['audio', 'text'],
-                    input_audio_transcription: { model: 'whisper-1' },
+                    session: {
+                        type: 'realtime',
+                        model,
+                        instructions,
+                        audio: {
+                            output: { voice },
+                            input: { transcription: { model: 'whisper-1' } },
+                        },
+                    },
                 }),
             });
 
@@ -1955,7 +1959,8 @@ export default class EmbedService {
             }
 
             const session = await resp.json();
-            const clientSecret = session?.client_secret?.value;
+            // GA devuelve { value, expires_at, session }; beta devolvía { client_secret: { value } }
+            const clientSecret = session?.value || session?.client_secret?.value;
             if (!clientSecret) {
                 return { success: false, message: 'OpenAI no devolvió un token efímero válido' };
             }
@@ -1964,7 +1969,7 @@ export default class EmbedService {
                 success: true,
                 data: {
                     token: clientSecret,
-                    expiresAt: session?.client_secret?.expires_at || null,
+                    expiresAt: session?.expires_at || session?.client_secret?.expires_at || null,
                     model,
                     voice,
                     botName: chatbot.name,
