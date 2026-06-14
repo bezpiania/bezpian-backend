@@ -12,7 +12,7 @@
 export const PLAN_CONFIG = {
     free: {
         label:         'Free',
-        conversations: 50,
+        conversations: 10,
         chatbots:      1,
         members:       2,
         price:         0,
