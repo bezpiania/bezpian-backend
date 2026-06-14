@@ -153,6 +153,36 @@ function buildOrderTool(chatbot) {
     };
 }
 
+/**
+ * Ensambla el array de tools (Chat Completions format) según features/businessType del bot.
+ * Misma lógica que sendMessage usa inline — extraída para reutilizarla en el widget de voz.
+ */
+async function buildToolsForChatbot(chatbot, conversation) {
+    const features = chatbot.features || {};
+    const calEnabled = features.appointments && chatbot.integrations?.calendar?.enabled;
+    const activeResources = calEnabled ? await Resource.find({ chatbotId: chatbot._id, isActive: true }) : [];
+    const appointmentTools = activeResources.length > 0 ? [buildAppointmentTool(chatbot)] : [];
+    const isDineIn = !!(conversation?.visitorMetadata?.tableId);
+    const deliveryEnabled = !!(features.sales || chatbot.deliveryConfig?.enabled);
+    const deliveryTools = deliveryEnabled && (chatbot.deliveryConfig?.enabled || isDineIn) ? [buildOrderTool(chatbot)] : [];
+    const billTools     = deliveryEnabled && isDineIn ? [REQUEST_BILL_TOOL] : [];
+    const quoteTools    = features.quotes && (chatbot.businessType === 'store' && chatbot.quoteConfig?.enabled) ? [GENERATE_QUOTE_TOOL] : [];
+    return [...appointmentTools, ...deliveryTools, ...billTools, ...quoteTools];
+}
+
+/**
+ * Convierte tools de formato Chat Completions ({type, function:{name,...}})
+ * al formato aplanado que usa la Realtime API GA ({type:'function', name, ...}).
+ */
+function toRealtimeTools(tools) {
+    return (tools || []).map(t => ({
+        type: 'function',
+        name: t.function.name,
+        description: t.function.description,
+        parameters: t.function.parameters,
+    }));
+}
+
 // Limpieza de cache cada 30 minutos
 setInterval(() => {
     advancedRag.cleanupCache();
@@ -1927,27 +1957,38 @@ export default class EmbedService {
             // El audio no debe leer markdown ni listas largas: pedir respuestas conversacionales
             instructions += '\n\nIMPORTANTE: Estás en una llamada de voz. Habla de forma natural y conversacional, sin markdown, sin viñetas ni listas largas. Sé breve y claro.';
 
+            // Tools: mismas que el chat de texto (reservar, pedir, cotizar) según el bot
+            const tools = await buildToolsForChatbot(chatbot, null);
+            const realtimeTools = toRealtimeTools(tools);
+            if (realtimeTools.length) {
+                instructions += '\n\nPuedes ejecutar acciones (reservar, tomar pedidos, generar cotizaciones) usando las herramientas disponibles. Antes de llamar una herramienta, confirma verbalmente con el cliente los datos clave (nombre, fecha/hora, productos, etc.). Nunca inventes datos: si falta algo, pregúntalo.';
+            }
+
             const model = 'gpt-realtime';
             const voice = chatbot.voiceSettings?.voice || 'alloy';
 
             // Endpoint GA: /v1/realtime/client_secrets con objeto session anidado
+            const sessionBody = {
+                type: 'realtime',
+                model,
+                instructions,
+                audio: {
+                    output: { voice },
+                    input: { transcription: { model: 'whisper-1' } },
+                },
+            };
+            if (realtimeTools.length) {
+                sessionBody.tools = realtimeTools;
+                sessionBody.tool_choice = 'auto';
+            }
+
             const resp = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${apiKey}`,
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
-                    session: {
-                        type: 'realtime',
-                        model,
-                        instructions,
-                        audio: {
-                            output: { voice },
-                            input: { transcription: { model: 'whisper-1' } },
-                        },
-                    },
-                }),
+                body: JSON.stringify({ session: sessionBody }),
             });
 
             if (!resp.ok) {
@@ -1979,6 +2020,170 @@ export default class EmbedService {
         } catch (error) {
             logger.error('mintRealtimeToken error', { error: error.message });
             return { success: false, message: error.message };
+        }
+    };
+
+    /**
+     * Registra una línea de transcripción de voz como Message (para que la
+     * conversación de voz aparezca igual que una de chat en el panel).
+     */
+    logVoiceMessage = async (conversationId, role, content) => {
+        try {
+            if (!conversationId || !content) return { success: false };
+            const conversation = await Conversation.findById(conversationId);
+            if (!conversation) return { success: false, message: 'Conversación no encontrada' };
+            await Message.create({
+                conversationId: conversation._id,
+                chatbotId: conversation.chatbotId,
+                role: role === 'user' ? 'user' : 'assistant',
+                content: String(content).slice(0, 4000),
+                createdAt: new Date(),
+            });
+            await Conversation.updateOne({ _id: conversation._id }, {
+                $set: { lastMessageAt: new Date() },
+                $inc: { messageCount: 1 },
+            });
+            return { success: true };
+        } catch (error) {
+            logger.error('logVoiceMessage error', { error: error.message });
+            return { success: false, message: error.message };
+        }
+    };
+
+    /**
+     * Ejecuta una tool solicitada por el modelo de voz (Realtime API).
+     * El modelo ya recopiló y confirmó los datos conversacionalmente, así que
+     * aquí ejecutamos la acción real (crear cita/pedido/cotización) reusando
+     * los mismos servicios que el chat de texto, y devolvemos un texto hablable.
+     */
+    executeVoiceTool = async (embedKey, conversationId, name, args) => {
+        try {
+            const chatbot = await Chatbot.findOne({ embedKey });
+            if (!chatbot) return { success: false, message: 'Chatbot no encontrado' };
+            const conversation = conversationId ? await Conversation.findById(conversationId) : null;
+            if (!conversation) return { success: false, message: 'Conversación no encontrada' };
+
+            args = args || {};
+            const tableInfo = conversation.visitorMetadata || {};
+            const isDineInOrder = !!(tableInfo.tableId);
+
+            // ── book_appointment ──
+            if (name === 'book_appointment') {
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(args.date || '') || !/^\d{2}:\d{2}$/.test(args.time || '')) {
+                    return { success: true, result: 'Necesito la fecha y la hora exactas para reservar. ¿Para cuándo te gustaría?' };
+                }
+                const best = await findBestResource(
+                    chatbot._id.toString(), args.date, args.time, args.guest_count || 1, args.preferred_resource || null
+                );
+                if (!best) {
+                    return { success: true, result: 'Ese horario ya no está disponible. ¿Te acomoda otro horario?' };
+                }
+                const scheduledAt = new Date(`${args.date}T${args.time}:00.000Z`);
+                const fields = chatbot.appointmentFields || [];
+                const resolved = {};
+                for (const f of fields) resolved[f.fieldId] = args[f.fieldId] || args[`customer_${f.fieldId}`] || '';
+                const extraNotes = fields.filter(f => resolved[f.fieldId]).map(f => `${f.label}: ${resolved[f.fieldId]}`).join(' | ');
+
+                // Evitar duplicados en la misma conversación
+                const existing = await Appointment.findOne({ conversationId: conversation._id, status: { $ne: 'cancelled' } });
+                if (existing) {
+                    return { success: true, result: `Tu reserva ya está confirmada para el ${args.date} a las ${args.time}. ¿Algo más en que te ayude?` };
+                }
+                await Appointment.create({
+                    chatbotId: chatbot._id, workspaceId: chatbot.workspaceId, conversationId: conversation._id,
+                    resourceId: best.id, guestCount: args.guest_count || 1, scheduledAt,
+                    durationMinutes: best.durationMinutes || 90,
+                    customerName: resolved['name'] || '', customerEmail: resolved['email'] || '', customerPhone: resolved['phone'] || '',
+                    notes: extraNotes || args.notes || '', status: 'scheduled',
+                });
+                await Chatbot.updateOne({ _id: chatbot._id }, { $inc: { 'stats.totalAppointments': 1 } });
+                return { success: true, result: `Reserva confirmada para ${args.guest_count || 1} persona(s) el ${args.date} a las ${args.time}. Avísale al cliente que recibirá una confirmación.` };
+            }
+
+            // ── create_order ──
+            if (name === 'create_order') {
+                const delivery = chatbot.deliveryConfig || {};
+                if (!Array.isArray(args.items) || args.items.length === 0) {
+                    return { success: true, result: 'No tengo productos en el pedido. ¿Qué desea pedir el cliente?' };
+                }
+                const items = args.items.map(i => ({
+                    name: i.name, quantity: i.quantity, unitPrice: i.unit_price, totalPrice: (i.unit_price || 0) * (i.quantity || 0),
+                    notes: i.notes || '', variant: i.variant || '', productId: i.product_id || null,
+                }));
+                if (chatbot.businessType === 'store') {
+                    const stockCheck = await stockService.checkOrderStock(items);
+                    if (!stockCheck.valid) {
+                        const issues = stockCheck.issues.map(iss => iss.message).join('; ');
+                        return { success: true, result: `Hay un problema de stock: ${issues}. Pregúntale al cliente si quiere ajustar cantidades.` };
+                    }
+                }
+                const subtotal = items.reduce((s, i) => s + i.totalPrice, 0);
+                const deliveryCost = isDineInOrder ? 0 : (delivery.deliveryCost || 0);
+                const total = subtotal + deliveryCost;
+                const order = await Order.create({
+                    chatbotId: chatbot._id, workspaceId: chatbot.workspaceId, conversationId: conversation._id,
+                    orderType: isDineInOrder ? 'dine_in' : (args.delivery_address === 'retiro' ? 'pickup' : 'delivery'),
+                    tableId: tableInfo.tableId || null, tableName: tableInfo.tableName || null,
+                    items, subtotal, deliveryCost, total,
+                    customerName: args.customer_name || (isDineInOrder ? 'Cliente en mesa' : ''),
+                    customerPhone: args.customer_phone || '', customerEmail: args.customer_email || '',
+                    deliveryAddress: isDineInOrder ? `Mesa: ${tableInfo.tableName}` : (args.delivery_address || ''),
+                    deliveryZone: args.delivery_zone || '', estimatedMinutes: delivery.estimatedMinutes || 20,
+                    notes: args.notes || '', status: 'new',
+                });
+                if (chatbot.businessType === 'store') setImmediate(() => stockService.decrementOrderStock(items));
+                const itemsText = items.map(i => `${i.quantity} ${i.name}${i.variant ? ` (${i.variant})` : ''}`).join(', ');
+                return { success: true, result: `Pedido #${order.orderNumber} registrado: ${itemsText}. Total ${total.toLocaleString()}. Confírmaselo al cliente.` };
+            }
+
+            // ── generate_quote ──
+            if (name === 'generate_quote') {
+                const qConfig = chatbot.quoteConfig || {};
+                if (!Array.isArray(args.items) || args.items.length === 0) {
+                    return { success: true, result: 'Necesito los productos para cotizar. ¿Qué necesita el cliente?' };
+                }
+                const items = args.items.map(i => {
+                    let discountPct = 0;
+                    if (qConfig.volumeDiscounts?.length) {
+                        const tier = [...qConfig.volumeDiscounts].sort((a, b) => b.minQty - a.minQty).find(d => i.quantity >= d.minQty);
+                        if (tier) discountPct = tier.discountPct;
+                    }
+                    const discountedPrice = (i.unit_price || 0) * (1 - discountPct / 100);
+                    return {
+                        description: `${i.name}${i.variant ? ` [${i.variant}]` : ''}`, quantity: i.quantity,
+                        unitPrice: parseFloat(discountedPrice.toFixed(2)), total: parseFloat((discountedPrice * i.quantity).toFixed(2)),
+                        discount: discountPct > 0 ? `${discountPct}% desc.` : null,
+                    };
+                });
+                const subtotal = items.reduce((s, i) => s + i.total, 0);
+                const taxAmt = qConfig.taxRate ? subtotal * (qConfig.taxRate / 100) : 0;
+                const total = subtotal + taxAmt;
+                const quote = await Quote.create({
+                    chatbotId: chatbot._id, workspaceId: chatbot.workspaceId, conversationId: conversation._id,
+                    quoteNumber: `QT-${Date.now()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`,
+                    items, subtotal: parseFloat(subtotal.toFixed(2)), tax: parseFloat(taxAmt.toFixed(2)), total: parseFloat(total.toFixed(2)),
+                    currency: 'CLP', customerData: { name: args.customer_name, email: args.customer_email, phone: args.customer_phone || '' },
+                    shareToken: crypto.randomBytes(16).toString('hex'),
+                    expiresAt: new Date(Date.now() + (qConfig.validityDays || 30) * 86400000), status: 'draft',
+                });
+                return { success: true, result: `Cotización ${quote.quoteNumber} generada por un total de ${total.toLocaleString()}. Se enviará a ${args.customer_email}. Confírmaselo al cliente.` };
+            }
+
+            // ── request_bill ──
+            if (name === 'request_bill') {
+                const tableOrders = await Order.find({ conversationId: conversation._id, orderType: 'dine_in', status: { $nin: ['cancelled'] } });
+                await Order.updateMany(
+                    { conversationId: conversation._id, orderType: 'dine_in', billRequested: false },
+                    { billRequested: true, billRequestedAt: new Date() }
+                );
+                const grandTotal = tableOrders.reduce((s, o) => s + (o.total || 0), 0);
+                return { success: true, result: `Cuenta solicitada. Total de la mesa: ${grandTotal.toLocaleString()}. Avísale al cliente que el equipo le llevará la cuenta.` };
+            }
+
+            return { success: false, message: `Tool desconocida: ${name}` };
+        } catch (error) {
+            logger.error('executeVoiceTool error', { tool: name, error: error.message });
+            return { success: false, message: error.message, result: 'Hubo un problema al procesar la solicitud. Intenta de nuevo.' };
         }
     };
 

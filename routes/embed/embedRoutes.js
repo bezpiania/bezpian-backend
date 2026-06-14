@@ -18,5 +18,7 @@ router.get('/products', rateLimiter.middleware, embedController.searchProducts);
 router.get('/quote-fields', rateLimiter.middleware, embedController.getQuoteFields);
 router.get('/bot-info',    rateLimiter.middleware, embedController.getBotInfo);
 router.post('/realtime-token', rateLimiter.middleware, embedController.getRealtimeToken);
+router.post('/voice-tool', rateLimiter.middleware, embedController.executeVoiceTool);
+router.post('/voice-transcript', rateLimiter.middleware, embedController.logVoiceMessage);
 
 export default router;

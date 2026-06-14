@@ -107,6 +107,30 @@ export default class EmbedController {
         }
     };
 
+    executeVoiceTool = async (req, res) => {
+        try {
+            const { embedKey, conversationId, name, args } = req.body;
+            if (!embedKey || !conversationId || !name) {
+                return res.status(400).json({ success: false, message: 'embedKey, conversationId y name son requeridos' });
+            }
+            const response = await embedService.executeVoiceTool(embedKey, conversationId, name, args || {});
+            return res.status(response.success ? 200 : 400).json(response);
+        } catch (error) {
+            console.error('❌ EmbedController.executeVoiceTool:', error);
+            return res.status(500).json({ success: false, message: 'Error al ejecutar la acción de voz' });
+        }
+    };
+
+    logVoiceMessage = async (req, res) => {
+        try {
+            const { conversationId, role, content } = req.body;
+            const response = await embedService.logVoiceMessage(conversationId, role, content);
+            return res.status(response.success ? 200 : 400).json(response);
+        } catch (error) {
+            return res.status(500).json({ success: false, message: 'Error al registrar transcripción' });
+        }
+    };
+
     searchProducts = async (req, res) => {
         try {
             const response = await embedService.searchProducts(req.query.embedKey, req.query.q);
