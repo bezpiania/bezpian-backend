@@ -153,6 +153,23 @@ function buildOrderTool(chatbot) {
     };
 }
 
+// Tool exclusiva de voz: permite al modelo consultar el mismo RAG (documentos + catálogo)
+// que el chat de texto usa automáticamente por cada mensaje.
+const SEARCH_KNOWLEDGE_TOOL = {
+    type: 'function',
+    function: {
+        name: 'search_knowledge',
+        description: 'Busca información en la base de conocimiento del negocio: catálogo de productos, precios, documentos y datos cargados. Llama esta función SIEMPRE que el cliente pregunte por productos, servicios, precios, disponibilidad o cualquier dato específico que no esté en tus instrucciones base. Devuelve la información encontrada para que respondas con datos reales.',
+        parameters: {
+            type: 'object',
+            properties: {
+                query: { type: 'string', description: 'La consulta o pregunta del cliente, en sus propias palabras' },
+            },
+            required: ['query'],
+        },
+    },
+};
+
 /**
  * Ensambla el array de tools (Chat Completions format) según features/businessType del bot.
  * Misma lógica que sendMessage usa inline — extraída para reutilizarla en el widget de voz.
@@ -1959,9 +1976,12 @@ export default class EmbedService {
 
             // Tools: mismas que el chat de texto (reservar, pedir, cotizar) según el bot
             const tools = await buildToolsForChatbot(chatbot, null);
+            // + búsqueda de conocimiento (RAG) para tener el mismo acceso a catálogo/documentos que el chat
+            tools.push(SEARCH_KNOWLEDGE_TOOL);
             const realtimeTools = toRealtimeTools(tools);
-            if (realtimeTools.length) {
-                instructions += '\n\nPuedes ejecutar acciones (reservar, tomar pedidos, generar cotizaciones) usando las herramientas disponibles. Antes de llamar una herramienta, confirma verbalmente con el cliente los datos clave (nombre, fecha/hora, productos, etc.). Nunca inventes datos: si falta algo, pregúntalo.';
+            instructions += '\n\nTienes acceso a la base de conocimiento del negocio mediante la herramienta search_knowledge. SIEMPRE que el cliente pregunte por productos, precios, disponibilidad, servicios o datos específicos, llama primero a search_knowledge y responde con la información encontrada. Nunca inventes datos de productos o precios.';
+            if (realtimeTools.length > 1) {
+                instructions += '\n\nTambién puedes ejecutar acciones (reservar, tomar pedidos, generar cotizaciones) usando las herramientas disponibles. Antes de llamar una herramienta de acción, confirma verbalmente con el cliente los datos clave (nombre, fecha/hora, productos, etc.). Nunca inventes datos: si falta algo, pregúntalo.';
             }
 
             const model = 'gpt-realtime';
@@ -2066,6 +2086,28 @@ export default class EmbedService {
             args = args || {};
             const tableInfo = conversation.visitorMetadata || {};
             const isDineInOrder = !!(tableInfo.tableId);
+
+            // ── search_knowledge (RAG: catálogo + documentos, igual que el chat) ──
+            if (name === 'search_knowledge') {
+                const query = (args.query || '').trim();
+                if (!query) return { success: true, result: 'No entendí la consulta. ¿Puedes repetir qué necesitas?' };
+                try {
+                    const ragChunks = await advancedRag.searchDocumentsBySemantics(chatbot._id, query, 5, chatbot.openaiApiKey);
+                    let products = [];
+                    const gift = await advancedRag.searchGiftProducts(chatbot._id, query, 5);
+                    products = (gift.isGift && gift.products.length > 0)
+                        ? gift.products
+                        : await advancedRag.searchProducts(chatbot._id, query, 5, chatbot.openaiApiKey);
+                    const contextText = advancedRag.buildContext(ragChunks, products, chatbot.personality?.customPrompt);
+                    if (!contextText || !contextText.trim()) {
+                        return { success: true, result: 'No encontré información específica sobre eso en la base de conocimiento. Responde con lo que sepas o pide al cliente más detalles.' };
+                    }
+                    return { success: true, result: contextText.slice(0, 4000) };
+                } catch (ragErr) {
+                    logger.error('executeVoiceTool search_knowledge error', { error: ragErr.message });
+                    return { success: true, result: 'No pude consultar la base de conocimiento en este momento.' };
+                }
+            }
 
             // ── book_appointment ──
             if (name === 'book_appointment') {
