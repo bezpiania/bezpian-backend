@@ -8,7 +8,7 @@ const workspaceSchema = new mongoose.Schema({
   country: String,
   logo: String,
   brandColor: String,
-  plan: { type: String, default: 'free' },
+  plan: { type: String, enum: ['free', 'basico', 'pro', 'enterprise'], default: 'free' },
   subscriptionId: mongoose.Schema.Types.ObjectId,
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }

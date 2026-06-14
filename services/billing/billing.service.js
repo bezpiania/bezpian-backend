@@ -1,7 +1,7 @@
 import { Subscription, Payment, Workspace, WorkspaceMember } from '../../models/index.js';
 import Chatbot from '../../models/Chatbot.js';
 import Conversation from '../../models/Conversation.js';
-import { getPlanLimits } from '../../config/plans.js';
+import { getPlanLimits, PLAN_KEYS, normalizePlan } from '../../config/plans.js';
 
 const PLANS = [
     {
@@ -138,15 +138,15 @@ export default class BillingService {
 
     changePlan = async (workspaceId, newPlanId) => {
         try {
-            const VALID_PLANS = ['free', 'starter', 'pro', 'enterprise'];
-            if (!VALID_PLANS.includes(newPlanId)) {
+            const plan = normalizePlan(newPlanId);
+            if (!PLAN_KEYS.includes(plan)) {
                 return { success: false, message: 'Plan no válido' };
             }
 
             // Update workspace.plan — source of truth for limits
             const workspace = await Workspace.findByIdAndUpdate(
                 workspaceId,
-                { plan: newPlanId },
+                { plan },
                 { new: true }
             );
             if (!workspace) return { success: false, message: 'Workspace no encontrado' };
@@ -155,7 +155,7 @@ export default class BillingService {
             await Subscription.findOneAndUpdate(
                 { workspaceId },
                 {
-                    planId: newPlanId,
+                    plan,
                     status: 'active',
                     currentPeriodStart: new Date(),
                     currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),

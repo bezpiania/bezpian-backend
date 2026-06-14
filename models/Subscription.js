@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 const subscriptionSchema = new mongoose.Schema({
   workspaceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Workspace', required: true },
-  plan: { type: String, enum: ['starter', 'pro', 'enterprise'], required: true },
+  plan: { type: String, enum: ['free', 'basico', 'pro', 'enterprise'], required: true },
   status: { type: String, enum: ['trialing', 'active', 'past_due', 'cancelling', 'ended'], default: 'active' },
   trialEndsAt: Date,
   currentPeriodStart: Date,

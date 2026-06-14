@@ -1956,6 +1956,18 @@ export default class EmbedService {
                 return { success: false, message: 'Este chatbot no tiene API key de OpenAI configurada' };
             }
 
+            // Límite de conversaciones del plan (voz y texto comparten cupo)
+            const workspace = await Workspace.findById(chatbot.workspaceId).select('plan');
+            const { conversations: limit } = getPlanLimits(workspace?.plan);
+            if (limit > 0 && limit !== -1) {
+                const now = new Date();
+                const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+                const count = await Conversation.countDocuments({ workspaceId: chatbot.workspaceId, createdAt: { $gte: monthStart } });
+                if (count >= limit) {
+                    return { success: false, limitReached: true, message: 'Este negocio alcanzó su límite de conversaciones del mes.' };
+                }
+            }
+
             // Instrucciones = mismo cerebro que el chat de texto (empresa, tono, reglas, RAG-less base)
             let instructions = '';
             try {
