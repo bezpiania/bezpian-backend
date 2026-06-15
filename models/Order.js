@@ -63,6 +63,11 @@ const orderSchema = new mongoose.Schema({
     enum: ['new', 'preparing', 'on_the_way', 'shipped', 'delivered', 'returned', 'cancelled'],
     default: 'new',
   },
+
+  // Origen del pedido. 'widget' (chat/widget del negocio) o 'pielo' (marketplace).
+  source:      { type: String, default: 'widget' },
+  // Enlace al pedido del marketplace Pielo (opcional). Solo lo setea el módulo Pielo.
+  pieloOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'PieloOrder', default: null },
 }, { timestamps: true });
 
 orderSchema.index({ workspaceId: 1, createdAt: -1 });

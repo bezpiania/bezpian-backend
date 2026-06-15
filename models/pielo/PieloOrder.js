@@ -22,6 +22,7 @@ const pieloOrderSchema = new mongoose.Schema({
   chatbotId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Chatbot', required: true },  // la tienda
   workspaceId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Workspace' },                 // dueño de la tienda
   riderId:         { type: mongoose.Schema.Types.ObjectId, ref: 'PieloRider', default: null },  // repartidor (futuro)
+  orderId:         { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null },        // pedido espejo en el dashboard del restaurante
 
   items:           { type: [pieloOrderItemSchema], default: [] },
   subtotal:        { type: Number, required: true },

@@ -1,4 +1,5 @@
 import Chatbot from '../../models/Chatbot.js';
+import Order from '../../models/Order.js';
 import { PieloOrder } from '../../models/pielo/index.js';
 
 /**
@@ -29,7 +30,8 @@ class PieloOrderService {
     const dCost = deliveryCost || 0;
     const total = subtotal + dCost;
 
-    const order = await PieloOrder.create({
+    // 1) Pedido del marketplace (vista del consumidor + tracking/repartidor)
+    const pieloOrder = await PieloOrder.create({
       pieloUserId:     pieloUser._id,
       chatbotId:       store._id,
       workspaceId:     store.workspaceId,
@@ -44,7 +46,32 @@ class PieloOrderService {
       status:          'new',
     });
 
-    return { success: true, message: 'Pedido creado', data: { order } };
+    // 2) Pedido espejo en Bezpian → aparece en el panel Ventas del restaurante
+    try {
+      const mirror = await Order.create({
+        chatbotId:       store._id,
+        workspaceId:     store.workspaceId,
+        items:           normalizedItems,
+        subtotal,
+        deliveryCost:    dCost,
+        total,
+        customerName:    pieloUser.name,
+        customerPhone:   pieloUser.phone || '',
+        deliveryAddress: deliveryAddress || '',
+        notes:           notes || '',
+        orderType:       'delivery',
+        status:          'new',
+        source:          'pielo',
+        pieloOrderId:    pieloOrder._id,
+      });
+      pieloOrder.orderId = mirror._id;
+      await pieloOrder.save();
+      await Chatbot.updateOne({ _id: store._id }, { $inc: { 'stats.totalOrders': 1 } }).catch(() => {});
+    } catch (e) {
+      // si falla el espejo, el pedido de Pielo igual queda registrado
+    }
+
+    return { success: true, message: 'Pedido creado', data: { order: pieloOrder } };
   };
 
   getActive = async (pieloUserId) => {
