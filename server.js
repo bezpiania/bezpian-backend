@@ -27,6 +27,7 @@ import AdminRoutes from './routes/admin/adminRoutes.js';
 import QuoteRoutes from './routes/quotes/quoteRoutes.js';
 import BillingRoutes from './routes/billing/billingRoutes.js';
 import EmbedRoutes from './routes/embed/embedRoutes.js';
+import PieloRoutes from './routes/pielo/pieloRoutes.js';
 import WebhookRoutes from './routes/webhooks/webhookRoutes.js';
 import SocialRoutes from './routes/messaging/socialRoutes.js';
 import CalendarRoutes from './routes/calendar/calendarRoutes.js';
@@ -48,6 +49,7 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').filter(o =
 // Public embed endpoints — allow any origin (including file:// = null origin)
 const publicCors = cors({ origin: '*', credentials: false });
 app.use('/api/embed', publicCors);
+app.use('/api/pielo', publicCors); // marketplace Pielo (app móvil, cualquier origen)
 
 // Admin/private endpoints — restricted origins
 app.use(cors({
@@ -75,6 +77,7 @@ app.use('/chat', express.static(path.join(__dirname, 'public')));
 // Public routes (sin autenticación)
 app.use('/api/auth', AuthRoutes);
 app.use('/api/embed', EmbedRoutes);
+app.use('/api/pielo', PieloRoutes); // módulo Pielo (marketplace) — quitar esta línea para removerlo
 app.use('/api/webhooks', WebhookRoutes);
 app.use('/api/messaging', SocialRoutes);
 app.use('/api/calendar', CalendarRoutes);

@@ -8,6 +8,10 @@ const chatbotSchema = new mongoose.Schema({
   status:       { type: String, enum: ['draft', 'active', 'paused'], default: 'draft' },
   businessType: { type: String, enum: ['restaurant', 'store', 'clinic', 'generic'], default: 'generic' },
 
+  // Módulo Pielo (marketplace): el negocio acepta aparecer en Pielo. Único punto de
+  // contacto Bezpian↔Pielo. Opcional; si Pielo se quita, este campo simplemente no se lee.
+  pieloEnabled: { type: Boolean, default: false },
+
   personality: {
     tone: String,
     customPrompt: String,
