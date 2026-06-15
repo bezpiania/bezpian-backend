@@ -48,6 +48,26 @@ export default class PieloController {
     }
   };
 
+  restaurant = async (req, res) => {
+    try {
+      const data = await pieloConciergeService.getRestaurant(req.params.id);
+      if (!data) return res.status(404).json({ success: false, message: 'Local no disponible' });
+      return res.status(200).json({ success: true, data });
+    } catch (e) {
+      return res.status(500).json({ success: false, message: 'Error al cargar el local' });
+    }
+  };
+
+  product = async (req, res) => {
+    try {
+      const data = await pieloConciergeService.getProduct(req.params.id);
+      if (!data) return res.status(404).json({ success: false, message: 'Producto no disponible' });
+      return res.status(200).json({ success: true, data });
+    } catch (e) {
+      return res.status(500).json({ success: false, message: 'Error al cargar el producto' });
+    }
+  };
+
   chat = async (req, res) => {
     try {
       const r = await pieloConciergeService.chat(req.body?.message);

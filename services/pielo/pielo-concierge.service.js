@@ -43,6 +43,45 @@ class PieloConciergeService {
     return { featured: featured.slice(0, 12), chips };
   };
 
+  /** Detalle de un local + sus productos (para la pantalla del restaurante). */
+  getRestaurant = async (id) => {
+    const bot = await Chatbot.findOne({ _id: id, pieloEnabled: true, status: 'active' })
+      .select('name businessType widget personality.welcomeMessage');
+    if (!bot) return null;
+    const Product = (await import('../../models/Product.js')).default;
+    const products = await Product.find({ chatbotId: bot._id })
+      .select('name description price imageUrl category')
+      .lean();
+    return {
+      restaurant: {
+        id: bot._id,
+        name: bot.name,
+        businessType: bot.businessType || 'generic',
+        color: bot.widget?.color || '#DCFF1E',
+        avatar: bot.widget?.avatar || '🍽️',
+        welcomeMessage: bot.personality?.welcomeMessage || '',
+      },
+      products: products.map((p) => ({
+        id: p._id, name: p.name, description: p.description || '',
+        price: p.price, imageUrl: p.imageUrl || null, category: p.category || '',
+      })),
+    };
+  };
+
+  /** Detalle de un producto + su local. */
+  getProduct = async (id) => {
+    const Product = (await import('../../models/Product.js')).default;
+    const p = await Product.findById(id).select('name description price imageUrl category chatbotId').lean();
+    if (!p) return null;
+    const bot = await Chatbot.findOne({ _id: p.chatbotId, pieloEnabled: true, status: 'active' })
+      .select('name widget');
+    if (!bot) return null;
+    return {
+      product: { id: p._id, name: p.name, description: p.description || '', price: p.price, imageUrl: p.imageUrl || null, category: p.category || '' },
+      restaurant: { id: bot._id, name: bot.name, color: bot.widget?.color || '#DCFF1E', avatar: bot.widget?.avatar || '🍽️' },
+    };
+  };
+
   /** Tiendas activas en el marketplace. */
   getRestaurants = async () => {
     const bots = await Chatbot.find({ pieloEnabled: true, status: 'active' })

@@ -11,6 +11,8 @@ router.post('/auth/register', rateLimiter.middleware, ctrl.register);
 router.post('/auth/login',    rateLimiter.middleware, ctrl.login);
 router.get('/restaurants',    rateLimiter.middleware, ctrl.restaurants);
 router.get('/discovery',      rateLimiter.middleware, ctrl.discovery);
+router.get('/restaurants/:id', rateLimiter.middleware, ctrl.restaurant);
+router.get('/products/:id',    rateLimiter.middleware, ctrl.product);
 router.post('/chat',          rateLimiter.middleware, ctrl.chat);
 
 // ── Protegidas (consumidor autenticado) ──
