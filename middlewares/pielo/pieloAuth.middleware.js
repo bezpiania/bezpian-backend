@@ -4,7 +4,7 @@ import { PieloUser } from '../../models/pielo/index.js';
 /**
  * Auth de consumidores Pielo. Verifica el JWT (mismo JWT_SECRET) pero exige
  * un token de Pielo (payload con pieloUserId) y carga el PieloUser.
- * Un token de Bezpian no resuelve aquí → aislamiento entre dominios.
+ * Un token de Pielo no resuelve aquí → aislamiento entre dominios.
  */
 export const pieloAuthMiddleware = async (req, res, next) => {
   try {

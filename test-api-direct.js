@@ -2,7 +2,7 @@ import axios from 'axios';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 
-dotenv.config({ path: '/Users/cesarbarahona/Desktop/Bezpian/zapien-backend/.env' });
+dotenv.config({ path: '/Users/cesarbarahona/Desktop/Pielo/zapien-backend/.env' });
 
 // First, get a valid JWT token by logging in
 const instance = axios.create({

@@ -198,7 +198,7 @@ export default class WorkspaceService {
         try {
             const email = inviteeEmail.toLowerCase().trim();
 
-            // If user already exists in Bezpian, add directly
+            // If user already exists in Pielo, add directly
             const user = await User.findOne({ email });
             if (user) {
                 const existing = await WorkspaceMember.findOne({ workspaceId, userId: user._id });
@@ -228,7 +228,7 @@ export default class WorkspaceService {
             const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
             const inviteUrl = `${frontendUrl}/invitar?token=${token}`;
             const emailService = (await import('../notifications/email.service.js')).default;
-            await emailService.sendInvitation({ email, workspaceName: workspace?.name || 'Bezpian', role, inviteUrl });
+            await emailService.sendInvitation({ email, workspaceName: workspace?.name || 'Pielo', role, inviteUrl });
 
             return { success: true, message: `Invitación enviada a ${email}` };
         } catch (error) {

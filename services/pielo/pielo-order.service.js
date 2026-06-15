@@ -46,7 +46,7 @@ class PieloOrderService {
       status:          'new',
     });
 
-    // 2) Pedido espejo en Bezpian → aparece en el panel Ventas del restaurante
+    // 2) Pedido espejo en Pielo → aparece en el panel Ventas del restaurante
     try {
       const mirror = await Order.create({
         chatbotId:       store._id,

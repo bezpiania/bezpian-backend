@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import { PieloUser } from '../../models/pielo/index.js';
 
 /**
- * Auth de consumidores Pielo. Independiente del AuthService de Bezpian.
+ * Auth de consumidores Pielo. Independiente del AuthService de Pielo.
  * Token JWT con payload { pieloUserId } para diferenciarlo de los de negocio.
  */
 class PieloAuthService {

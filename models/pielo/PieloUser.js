@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 /**
  * PieloUser — consumidor del marketplace Pielo.
- * Auth independiente de los usuarios de Bezpian (dueños de negocio).
+ * Auth independiente de los usuarios de Pielo (dueños de negocio).
  * El hashing de password se hace en pielo-auth.service (como en User.js).
  */
 const pieloAddressSchema = new mongoose.Schema({

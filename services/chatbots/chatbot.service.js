@@ -165,12 +165,12 @@ export default class ChatbotService {
             const avatar = widget.avatar || '🤖';
             const position = widget.position || 'bottom-right';
 
-            const embedCode = `<!-- Bezpian Chat Widget -->
+            const embedCode = `<!-- Pielo Chat Widget -->
 <div id="zapien-chat-${chatbotId}"></div>
 <script>
   // Configura el contexto del usuario aquí (opcional)
   // El bot usará esta información para personalizar sus respuestas.
-  window.BezpianUser = {
+  window.PieloUser = {
     isLoggedIn: false,       // true / false
     // name:    '',          // nombre del usuario
     // email:   '',          // email del usuario
@@ -214,7 +214,7 @@ export default class ChatbotService {
                     color: chatConfig.color,
                     avatar: chatConfig.avatar,
                     chatbotName: chatConfig.chatbotName,
-                    visitorContext: window.BezpianUser || {}
+                    visitorContext: window.PieloUser || {}
                 }, '*');
             }
 
@@ -237,7 +237,7 @@ export default class ChatbotService {
         });
   })();
 </script>
-<!-- End Bezpian Chat Widget -->`;
+<!-- End Pielo Chat Widget -->`;
 
             return { success: true, message: 'Embed code obtenido', data: { embedCode, chatbotId, chatbotName: chatbot.name, apiUrl, baseUrl } };
         } catch (error) {
