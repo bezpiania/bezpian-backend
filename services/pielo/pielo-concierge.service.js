@@ -10,6 +10,39 @@ const advancedRag = new AdvancedRAGService();
  * para su propio catálogo), sin necesitar una key de plataforma.
  */
 class PieloConciergeService {
+  /**
+   * Vitrina de descubrimiento: productos destacados (con foto) de las tiendas
+   * Pielo + chips de antojos. Es el estado inicial del chat (impulso visual).
+   */
+  getDiscovery = async () => {
+    const bots = await Chatbot.find({ pieloEnabled: true, status: 'active' })
+      .select('name businessType widget');
+
+    const featured = [];
+    for (const bot of bots) {
+      const Product = (await import('../../models/Product.js')).default;
+      const prods = await Product.find({ chatbotId: bot._id, imageUrl: { $nin: [null, ''] } })
+        .select('name price imageUrl')
+        .limit(6)
+        .lean();
+      for (const p of prods) {
+        featured.push({
+          id: p._id,
+          name: p.name,
+          price: p.price,
+          imageUrl: p.imageUrl,
+          restaurant: { id: bot._id, name: bot.name, avatar: bot.widget?.avatar || '🍽️', color: bot.widget?.color || '#DCFF1E' },
+        });
+      }
+    }
+    // mezclar para variedad (orden estable basado en id)
+    featured.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+
+    const chips = ['Pizza', 'Sushi', 'Hamburguesa', 'Completos', 'Algo dulce', 'Bebidas'];
+
+    return { featured: featured.slice(0, 12), chips };
+  };
+
   /** Tiendas activas en el marketplace. */
   getRestaurants = async () => {
     const bots = await Chatbot.find({ pieloEnabled: true, status: 'active' })
