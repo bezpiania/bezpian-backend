@@ -209,6 +209,22 @@ class EmailService {
       return { success: false, error: error.message };
     }
   }
+
+  /**
+   * Notifica al equipo (alertas de error en producción, tickets de soporte, etc.).
+   * No-op silencioso si no hay SMTP configurado.
+   */
+  async notifyAdmin(subject, html) {
+    try {
+      if (!process.env.SMTP_USER) return { success: false, message: 'SMTP no configurado' };
+      const to = process.env.ADMIN_ALERT_EMAIL || process.env.SMTP_USER;
+      await this.transporter.sendMail({ from: process.env.SMTP_USER, to, subject, html });
+      return { success: true };
+    } catch (error) {
+      console.error('❌ notifyAdmin:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
 }
 
 export default new EmailService();

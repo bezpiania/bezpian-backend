@@ -10,6 +10,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 import connectMongoDB from './libs/mongoose.js';
 import { authMiddleware } from './middlewares/auth.middleware.js';
+import { notFound, errorHandler } from './middlewares/errorHandler.middleware.js';
+import rateLimiter from './middlewares/rateLimit.middleware.js';
+import emailService from './services/notifications/email.service.js';
+import logger from './utils/logger.js';
 import { processSyncQueue, schedulePeriodicSync } from './services/queue/sync-processor.js';
 
 // Routes
@@ -109,6 +113,45 @@ app.use('/api/admin', authMiddleware, AdminRoutes);
 app.use('/api/conversations', authMiddleware, ConversationRoutes);
 app.use('/api/documents', authMiddleware, DocumentRoutes);
 app.use('/api/billing', authMiddleware, BillingRoutes);
+
+// ── Observabilidad ──
+// Health check para monitoreo externo (UptimeRobot, etc.) → alerta si el server cae
+app.get('/api/health', (req, res) => {
+    res.status(200).json({ status: 'ok', uptime: Math.round(process.uptime()), timestamp: new Date().toISOString() });
+});
+
+// Soporte: el cliente reporta un problema → llega al equipo (email + log)
+app.post('/api/support', rateLimiter.middleware, async (req, res) => {
+    try {
+        const { email, message, context } = req.body || {};
+        if (!message) return res.status(400).json({ success: false, message: 'El mensaje es requerido' });
+        logger.warn('Ticket de soporte recibido', { email, context, message: String(message).slice(0, 500) });
+        emailService.notifyAdmin(
+            `🆘 Soporte: ${email || 'sin email'}`,
+            `<h3>Nuevo ticket de soporte</h3>
+             <p><strong>De:</strong> ${email || 'no indicado'}</p>
+             <p><strong>Contexto:</strong> ${context || '-'}</p>
+             <p><strong>Mensaje:</strong></p><p>${String(message).slice(0, 2000)}</p>`
+        ).catch(() => {});
+        return res.status(200).json({ success: true, message: 'Recibimos tu mensaje, te contactaremos pronto.' });
+    } catch (e) {
+        return res.status(500).json({ success: false, message: 'No se pudo enviar el mensaje' });
+    }
+});
+
+// 404 + manejador global de errores (SIEMPRE al final, después de las rutas)
+app.use(notFound);
+app.use(errorHandler);
+
+// Errores no capturados a nivel proceso → log + alerta (no tumbar el server por un rejection)
+process.on('unhandledRejection', (reason) => {
+    logger.error('unhandledRejection', { reason: reason?.message || String(reason), stack: reason?.stack });
+    emailService.notifyAdmin('🚨 unhandledRejection', `<pre>${reason?.stack || reason}</pre>`).catch(() => {});
+});
+process.on('uncaughtException', (err) => {
+    logger.error('uncaughtException', { message: err?.message, stack: err?.stack });
+    emailService.notifyAdmin('🚨 uncaughtException', `<pre>${err?.stack || err?.message}</pre>`).catch(() => {});
+});
 
 const PORT = process.env.PORT || 5001;
 app.listen(PORT, '0.0.0.0', () => {
