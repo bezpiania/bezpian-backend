@@ -15,7 +15,7 @@ class PieloConciergeService {
    * Pielo + chips de antojos. Es el estado inicial del chat (impulso visual).
    */
   getDiscovery = async () => {
-    const bots = await Chatbot.find({ pieloEnabled: true, status: 'active' })
+    const bots = await Chatbot.find({ pieloEnabled: true, status: 'active', businessType: 'restaurant' })
       .select('name businessType widget');
 
     const featured = [];
@@ -45,7 +45,7 @@ class PieloConciergeService {
 
   /** Detalle de un local + sus productos (para la pantalla del restaurante). */
   getRestaurant = async (id) => {
-    const bot = await Chatbot.findOne({ _id: id, pieloEnabled: true, status: 'active' })
+    const bot = await Chatbot.findOne({ _id: id, pieloEnabled: true, status: 'active', businessType: 'restaurant' })
       .select('name businessType widget personality.welcomeMessage');
     if (!bot) return null;
     const Product = (await import('../../models/Product.js')).default;
@@ -73,7 +73,7 @@ class PieloConciergeService {
     const Product = (await import('../../models/Product.js')).default;
     const p = await Product.findById(id).select('name description price imageUrl category chatbotId').lean();
     if (!p) return null;
-    const bot = await Chatbot.findOne({ _id: p.chatbotId, pieloEnabled: true, status: 'active' })
+    const bot = await Chatbot.findOne({ _id: p.chatbotId, pieloEnabled: true, status: 'active', businessType: 'restaurant' })
       .select('name widget');
     if (!bot) return null;
     return {
@@ -84,7 +84,7 @@ class PieloConciergeService {
 
   /** Tiendas activas en el marketplace. */
   getRestaurants = async () => {
-    const bots = await Chatbot.find({ pieloEnabled: true, status: 'active' })
+    const bots = await Chatbot.find({ pieloEnabled: true, status: 'active', businessType: 'restaurant' })
       .select('name businessType widget personality.welcomeMessage');
     return bots.map((b) => ({
       id: b._id,
@@ -100,7 +100,7 @@ class PieloConciergeService {
    * Devuelve resultados agrupados por tienda (solo las que tienen match).
    */
   search = async (query, perStoreLimit = 4) => {
-    const bots = await Chatbot.find({ pieloEnabled: true, status: 'active' });
+    const bots = await Chatbot.find({ pieloEnabled: true, status: 'active', businessType: 'restaurant' });
     const results = [];
     for (const bot of bots) {
       try {
