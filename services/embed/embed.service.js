@@ -1888,6 +1888,10 @@ export default class EmbedService {
             const chatbot = await Chatbot.findOne({ embedKey }).select('name widget businessType personality.welcomeMessage');
             if (!chatbot) return { success: false, message: 'Chatbot no encontrado' };
 
+            // Logo de la empresa (opcional) — vive en CompanyInfo, scope por chatbot
+            const companyInfo = await CompanyInfo.findOne({ chatbotId: chatbot._id }).select('company.logo').lean();
+            const logo = companyInfo?.company?.logo || null;
+
             // Sugerencias: usar las del bot si existen, sino fallback por businessType
             const DEFAULT_SUGGESTIONS = {
                 restaurant: [
@@ -1926,6 +1930,7 @@ export default class EmbedService {
                     name:           chatbot.name,
                     businessType:   chatbot.businessType || 'generic',
                     widget:         chatbot.widget || {},
+                    logo,
                     welcomeMessage: chatbot.personality?.welcomeMessage || '',
                     suggestions,
                 },
