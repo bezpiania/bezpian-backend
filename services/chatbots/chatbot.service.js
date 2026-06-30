@@ -5,8 +5,15 @@ import CompanyInfo from '../../models/CompanyInfo.js';
 export default class ChatbotService {
     list = async (workspaceId) => {
         try {
-            const chatbots = await Chatbot.find({ workspaceId });
-            return { success: true, message: 'Chatbots obtenidos', data: chatbots };
+            const chatbots = await Chatbot.find({ workspaceId }).lean();
+            // Adjuntar el logo de cada bot (vive en CompanyInfo) sin romper el resto
+            const infos = await CompanyInfo.find({
+                chatbotId: { $in: chatbots.map(c => c._id) }
+            }).select('chatbotId company.logo').lean();
+            const logoByBot = {};
+            infos.forEach(i => { if (i.chatbotId) logoByBot[i.chatbotId.toString()] = i.company?.logo || null; });
+            const data = chatbots.map(c => ({ ...c, logo: logoByBot[c._id.toString()] || null }));
+            return { success: true, message: 'Chatbots obtenidos', data };
         } catch (error) {
             console.error('❌ ChatbotService.list:', error);
             return { success: false, message: error.message };
