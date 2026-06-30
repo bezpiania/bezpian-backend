@@ -1,6 +1,7 @@
 import { Quote } from '../../models/index.js';
 import crypto from 'crypto';
 import logger from '../../utils/logger.js';
+import emailService from '../notifications/email.service.js';
 
 class QuoteService {
     create = async (workspaceId, chatbotId, quoteData) => {
@@ -92,7 +93,22 @@ class QuoteService {
 
     resend = async (quoteId) => {
         try {
-            // TODO: Send quote email to customer
+            const quote = await Quote.findById(quoteId);
+            if (!quote) return { success: false, message: 'Cotización no encontrada' };
+            if (!quote.customerEmail) return { success: false, message: 'La cotización no tiene email del cliente' };
+
+            await emailService.sendQuote({
+                customerEmail: quote.customerEmail,
+                customerName: quote.customerName,
+                quoteNumber: quote.quoteNumber,
+                items: quote.items,
+                totalAmount: quote.totalAmount,
+                currency: quote.currency,
+                validUntil: quote.validUntil,
+                notes: quote.notes
+            });
+
+            await Quote.findByIdAndUpdate(quoteId, { lastSentAt: new Date() });
             return { success: true, message: 'Cotización reenviada' };
         } catch (error) {
             console.error('❌ QuoteService.resend:', error);

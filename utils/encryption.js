@@ -1,15 +1,21 @@
 import crypto from 'crypto';
 
-const DEFAULT_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+// Llave legacy: solo para PODER LEER datos que se encriptaron antes de exigir
+// ENCRYPTION_KEY. NUNCA se usa para encriptar datos nuevos.
+const LEGACY_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 const ALGORITHM = 'aes-256-cbc';
 const IV_LENGTH = 16;
 
-// Validate and normalize encryption key — must be exactly 32 bytes (64 hex chars)
+// Valida y normaliza la llave — debe ser exactamente 32 bytes (64 hex).
+// FAIL-CLOSED: si ENCRYPTION_KEY falta o es inválida, el proceso NO arranca
+// (en vez de caer silenciosamente en una llave pública conocida).
 function resolveKey(raw) {
   const buf = Buffer.from(raw || '', 'hex');
   if (buf.length === 32) return buf;
-  // Invalid key (non-hex chars, wrong length) — fall back to default
-  return Buffer.from(DEFAULT_KEY, 'hex');
+  throw new Error(
+    'ENCRYPTION_KEY inválida o ausente: debe ser una cadena hex de 64 caracteres (32 bytes). ' +
+    'Configúrala como variable de entorno antes de iniciar el servidor.'
+  );
 }
 
 const ACTIVE_KEY = resolveKey(process.env.ENCRYPTION_KEY);
@@ -42,8 +48,8 @@ function tryDecrypt(encryptedData, key) {
 export function decrypt(encryptedData) {
   if (!encryptedData) return null;
 
-  // Try active key first, then fall back to default key (handles migrated data)
-  const keysToTry = [ACTIVE_KEY, Buffer.from(DEFAULT_KEY, 'hex')];
+  // Prueba la llave activa primero; luego la legacy solo para LEER datos antiguos.
+  const keysToTry = [ACTIVE_KEY, Buffer.from(LEGACY_KEY, 'hex')];
   for (const key of keysToTry) {
     try {
       const result = tryDecrypt(encryptedData, key);

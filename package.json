@@ -23,8 +23,10 @@
     "dotenv": "^16.6.1",
     "express": "^4.18.2",
     "express-fileupload": "^1.5.0",
+    "express-mongo-sanitize": "^2.2.0",
     "google-auth-library": "^10.6.2",
     "googleapis": "^172.0.0",
+    "helmet": "^8.2.0",
     "js-tiktoken": "^1.0.21",
     "jsonwebtoken": "^9.0.3",
     "mammoth": "^1.12.0",
@@ -34,6 +36,7 @@
     "pdfjs-dist": "^5.7.284",
     "playwright": "^1.60.0",
     "redis": "^5.12.1",
+    "resend": "^6.16.0",
     "twilio": "^6.0.2"
   },
   "devDependencies": {

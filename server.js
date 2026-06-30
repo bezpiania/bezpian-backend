@@ -3,6 +3,8 @@ dotenv.config();
 
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import mongoSanitize from 'express-mongo-sanitize';
 import fileUpload from 'express-fileupload';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -48,6 +50,18 @@ console.log('✅ Periodic sync scheduler started (every 5 minutes)');
 
 const app = express();
 
+// Cabeceras de seguridad. CSP/frameguard desactivados a propósito: los widgets
+// embebidos (burbuja, chat, voz) se cargan en iframes cross-origin en sitios de
+// clientes, y crossOriginResourcePolicy debe permitir cross-origin para que el
+// embed estático (/chat) cargue desde cualquier dominio. El resto de cabeceras
+// útiles (nosniff, HSTS, etc.) quedan activas sin romper nada.
+app.use(helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    frameguard: false,
+}));
+
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').filter(o => o.trim());
 
 // Public embed endpoints — allow any origin (including file:// = null origin)
@@ -71,9 +85,15 @@ app.use(fileUpload({
     useTempFiles: true,
     tempFileDir: './tmp',
     createParentPath: true,
+    limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB por archivo
+    abortOnLimit: true,
+    responseOnLimit: 'El archivo supera el límite de 25 MB.',
 }));
 
 app.use(express.json());
+
+// Neutraliza operadores de inyección NoSQL ($, .) en body/query/params.
+app.use(mongoSanitize());
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/chat', express.static(path.join(__dirname, 'public')));

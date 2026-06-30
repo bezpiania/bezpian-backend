@@ -2,6 +2,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { User, RefreshToken, Workspace, WorkspaceMember } from '../../models/index.js';
+import emailService from '../notifications/email.service.js';
 
 export default class AuthService {
   signup = async (email, password, name) => {
@@ -39,10 +40,53 @@ export default class AuthService {
       user.defaultWorkspaceId = workspace._id;
       await user.save();
 
+      // Create owner membership
+      await WorkspaceMember.create({
+        workspaceId: workspace._id,
+        userId: user._id,
+        role: 'owner',
+        status: 'active',
+        joinedAt: new Date()
+      });
+
+      // Auto-login: generate tokens so user lands directly on dashboard
+      const accessToken = jwt.sign(
+        { userId: user._id, email: user.email },
+        process.env.JWT_SECRET,
+        { expiresIn: '1h' }
+      );
+
+      const refreshToken = crypto.randomBytes(32).toString('hex');
+      await RefreshToken.create({
+        token: refreshToken,
+        userId: user._id,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+      });
+
+      // Enviar email de verificación (no bloquea la respuesta)
+      setImmediate(() => {
+        emailService.sendEmailVerification({
+          email: user.email,
+          name: user.name,
+          token: emailVerificationToken
+        });
+      });
+
       return {
         success: true,
-        message: 'Usuario creado. Verifica tu email.',
-        data: { userId: user._id, email: user.email, defaultWorkspaceId: workspace._id }
+        message: 'Cuenta creada exitosamente',
+        data: {
+          accessToken,
+          refreshToken,
+          user: {
+            id: user._id,
+            name: user.name,
+            email: user.email,
+            avatar: user.avatar || null,
+            defaultWorkspaceId: workspace._id,
+            workspaceRole: 'owner'
+          }
+        }
       };
     } catch (error) {
       console.error('❌ AuthService.signup:', error);
@@ -204,6 +248,14 @@ export default class AuthService {
       const emailVerificationToken = crypto.randomBytes(32).toString('hex');
       await User.updateOne({ _id: user._id }, { emailVerificationToken });
 
+      setImmediate(() => {
+        emailService.sendEmailVerification({
+          email: user.email,
+          name: user.name,
+          token: emailVerificationToken
+        });
+      });
+
       return { success: true, message: 'Email de verificación reenviado' };
     } catch (error) {
       console.error('❌ AuthService.resendVerification:', error);
@@ -227,7 +279,15 @@ export default class AuthService {
         { passwordResetToken, passwordResetExpiresAt }
       );
 
-      return { success: true, message: 'Email de reset enviado' };
+      setImmediate(() => {
+        emailService.sendPasswordReset({
+          email: user.email,
+          name: user.name,
+          token: passwordResetToken
+        });
+      });
+
+      return { success: true, message: 'Si el email existe, recibirás instrucciones en breve' };
     } catch (error) {
       console.error('❌ AuthService.forgotPassword:', error);
       return { success: false, message: error.message };

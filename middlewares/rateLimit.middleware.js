@@ -9,6 +9,31 @@ const LIMITS = {
     maxRequests: 10,
     timeWindow: 60000
   },
+  // Endpoints de autenticación — estrictos para frenar fuerza bruta / credential stuffing
+  'POST /api/auth/login': {
+    maxRequests: 10,
+    timeWindow: 300000 // 5 minutos
+  },
+  'POST /api/auth/signup': {
+    maxRequests: 5,
+    timeWindow: 300000
+  },
+  'POST /api/auth/forgot-password': {
+    maxRequests: 5,
+    timeWindow: 300000
+  },
+  'POST /api/auth/reset-password': {
+    maxRequests: 10,
+    timeWindow: 300000
+  },
+  'POST /api/auth/resend-verification': {
+    maxRequests: 5,
+    timeWindow: 300000
+  },
+  'POST /api/auth/verify-email': {
+    maxRequests: 20,
+    timeWindow: 300000
+  },
   'default': {
     maxRequests: 100,
     timeWindow: 60000
