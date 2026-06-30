@@ -21,7 +21,8 @@ const companyInfoSchema = new mongoose.Schema(
       country: String,
       phone: String,
       email: String,
-      website: String
+      website: String,
+      logo: String   // URL del logo (Cloudinary), imagen cuadrada 500x500
     },
     operationHours: [
       {

@@ -37,6 +37,7 @@ import PieloRoutes from './routes/pielo/pieloRoutes.js';
 import WebhookRoutes from './routes/webhooks/webhookRoutes.js';
 import SocialRoutes from './routes/messaging/socialRoutes.js';
 import CalendarRoutes from './routes/calendar/calendarRoutes.js';
+import UploadRoutes from './routes/uploads/uploadRoutes.js';
 
 connectMongoDB();
 
@@ -132,6 +133,7 @@ app.use('/api/admin', authMiddleware, AdminRoutes);
 // Legacy direct routes (para compatibilidad)
 app.use('/api/conversations', authMiddleware, ConversationRoutes);
 app.use('/api/documents', authMiddleware, DocumentRoutes);
+app.use('/api/uploads', UploadRoutes); // subida de logos (Cloudinary); auth dentro de cada ruta
 app.use('/api/billing', authMiddleware, BillingRoutes);
 
 // ── Observabilidad ──
