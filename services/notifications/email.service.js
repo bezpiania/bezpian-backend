@@ -1,15 +1,22 @@
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 const FROM = process.env.EMAIL_FROM || 'Pielo <noreply@pielo.app>';
 const ADMIN_EMAIL = process.env.ADMIN_ALERT_EMAIL || process.env.EMAIL_FROM;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
 const isConfigured = () => Boolean(process.env.RESEND_API_KEY);
 
+// Cliente Resend perezoso: solo se instancia si hay API key, para que el
+// servidor arranque aunque RESEND_API_KEY no esté configurada.
+let _resend = null;
+const getResend = () => {
+  if (!_resend && process.env.RESEND_API_KEY) _resend = new Resend(process.env.RESEND_API_KEY);
+  return _resend;
+};
+
 const send = async ({ to, subject, html }) => {
-  if (!isConfigured()) {
+  const resend = getResend();
+  if (!isConfigured() || !resend) {
     console.warn('⚠️ RESEND_API_KEY no configurada — email no enviado:', subject);
     return { success: false, message: 'Email service not configured' };
   }
