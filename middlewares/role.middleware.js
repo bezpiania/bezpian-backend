@@ -1,6 +1,8 @@
 import { WorkspaceMember } from '../models/index.js';
 
-const ROLE_HIERARCHY = { owner: 3, admin: 2, member: 1 };
+// 'client' (cliente final del plan Empresa) lee como member (1); requireAdmin (2) lo bloquea.
+// Su alcance a UN solo bot lo fuerza authMiddleware.
+const ROLE_HIERARCHY = { owner: 3, admin: 2, member: 1, client: 1 };
 
 /**
  * Returns middleware that checks the user has at least the required role in the workspace.

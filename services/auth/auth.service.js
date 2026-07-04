@@ -131,8 +131,16 @@ export default class AuthService {
         }
       }
 
+      // Get user's role — owner of workspace always gets owner role
+      const workspace = await Workspace.findById(defaultWorkspaceId).select('ownerId plan');
+      const isOwner = workspace?.ownerId?.toString() === user._id.toString();
+      const membership = await WorkspaceMember.findOne({ workspaceId: defaultWorkspaceId, userId: user._id });
+      const workspaceRole = isOwner ? 'owner' : (membership?.role || 'member');
+      const scopedChatbotId = membership?.scopedChatbotId ? membership.scopedChatbotId.toString() : null;
+
+      // El token lleva rol + scope para que el middleware de seguridad restrinja a clientes.
       const accessToken = jwt.sign(
-        { userId: user._id, email: user.email },
+        { userId: user._id, email: user.email, role: workspaceRole, workspaceId: defaultWorkspaceId.toString(), scopedChatbotId },
         process.env.JWT_SECRET,
         { expiresIn: '1h' }
       );
@@ -145,12 +153,6 @@ export default class AuthService {
       });
 
       await User.updateOne({ _id: user._id }, { lastLoginAt: new Date() });
-
-      // Get user's role — owner of workspace always gets owner role
-      const workspace = await Workspace.findById(defaultWorkspaceId).select('ownerId plan');
-      const isOwner = workspace?.ownerId?.toString() === user._id.toString();
-      const membership = await WorkspaceMember.findOne({ workspaceId: defaultWorkspaceId, userId: user._id });
-      const workspaceRole = isOwner ? 'owner' : (membership?.role || 'member');
 
       return {
         success: true,
@@ -198,8 +200,15 @@ export default class AuthService {
       }
 
       const user = await User.findById(token.userId);
+      // Re-derivar rol + scope para conservarlos en el token renovado.
+      const wsId = user.defaultWorkspaceId;
+      const ws = wsId ? await Workspace.findById(wsId).select('ownerId') : null;
+      const isOwner = ws?.ownerId?.toString() === user._id.toString();
+      const membership = wsId ? await WorkspaceMember.findOne({ workspaceId: wsId, userId: user._id }) : null;
+      const role = isOwner ? 'owner' : (membership?.role || 'member');
+      const scopedChatbotId = membership?.scopedChatbotId ? membership.scopedChatbotId.toString() : null;
       const newAccessToken = jwt.sign(
-        { userId: user._id, email: user.email },
+        { userId: user._id, email: user.email, role, workspaceId: wsId ? wsId.toString() : null, scopedChatbotId },
         process.env.JWT_SECRET,
         { expiresIn: '1h' }
       );

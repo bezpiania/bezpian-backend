@@ -17,6 +17,10 @@ export default class ChatbotController {
             }
 
             const response = await chatbotService.list(workspaceId);
+            // Cliente final: solo puede ver su propio bot scopeado, no los del resto.
+            if (response.success && req.user?.role === 'client' && req.user.scopedChatbotId) {
+                response.data = (response.data || []).filter(b => b._id?.toString() === req.user.scopedChatbotId);
+            }
             return res.status(response.success ? 200 : 400).json(response);
         } catch (error) {
             console.error('❌ ChatbotController.list:', error);
@@ -61,6 +65,10 @@ export default class ChatbotController {
     get = async (req, res) => {
         try {
             const { id } = req.params;
+            // Cliente final: solo puede consultar su bot scopeado.
+            if (req.user?.role === 'client' && req.user.scopedChatbotId && id !== req.user.scopedChatbotId) {
+                return res.status(403).json({ success: false, message: 'No autorizado' });
+            }
             const response = await chatbotService.get(id);
             return res.status(response.success ? 200 : 404).json(response);
         } catch (error) {
