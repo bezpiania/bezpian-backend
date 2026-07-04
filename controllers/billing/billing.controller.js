@@ -1,9 +1,44 @@
 import BillingService from '../../services/billing/billing.service.js';
 import { validateRequired, validateMongoId } from '../../middlewares/validation.middleware.js';
+import { createCheckout, verifyWebhook, applyWebhook } from '../../services/billing/lemonsqueezy.service.js';
+import { Workspace, User } from '../../models/index.js';
 
 const billingService = new BillingService();
 
 export default class BillingController {
+    // POST /api/billing/checkout  { workspaceId, plan } → URL de pago de Lemon Squeezy
+    checkout = async (req, res) => {
+        try {
+            const { workspaceId, plan } = req.body;
+            if (!workspaceId || !plan) return res.status(400).json({ success: false, message: 'workspaceId y plan requeridos' });
+            const workspace = await Workspace.findById(workspaceId);
+            if (!workspace) return res.status(404).json({ success: false, message: 'Workspace no encontrado' });
+            const user = await User.findById(req.user.userId).select('email');
+            const url = await createCheckout(plan, workspace, user);
+            return res.status(200).json({ success: true, data: { url } });
+        } catch (error) {
+            console.error('❌ BillingController.checkout:', error);
+            return res.status(400).json({ success: false, message: error.message || 'Error al crear checkout' });
+        }
+    };
+
+    // POST /api/webhooks/lemonsqueezy (público, verificado por firma; body crudo)
+    lemonWebhook = async (req, res) => {
+        try {
+            const signature = req.headers['x-signature'];
+            const raw = req.body; // Buffer (montado con express.raw)
+            if (!verifyWebhook(raw, signature)) {
+                return res.status(401).json({ success: false, message: 'Firma inválida' });
+            }
+            const event = JSON.parse(raw.toString('utf8'));
+            await applyWebhook(event);
+            return res.status(200).json({ success: true });
+        } catch (error) {
+            console.error('❌ BillingController.lemonWebhook:', error);
+            return res.status(400).json({ success: false, message: 'Error procesando webhook' });
+        }
+    };
+
     getUsage = async (req, res) => {
         try {
             const workspaceId = req.query.workspaceId;

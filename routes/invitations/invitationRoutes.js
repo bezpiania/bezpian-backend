@@ -21,7 +21,7 @@ router.get('/:token', async (req, res) => {
       data: {
         email: invitation.email,
         role: invitation.role,
-        workspaceName: invitation.workspaceId?.name || 'Pielo',
+        workspaceName: invitation.workspaceId?.name || 'Øpia',
         expiresAt: invitation.expiresAt,
       },
     });

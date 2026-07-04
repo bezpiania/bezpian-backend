@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import * as chrono from 'chrono-node';
 import { getPlanLimits } from '../../config/plans.js';
+import { isSubscriptionActive } from '../../config/subscription.js';
 import Chatbot from '../../models/Chatbot.js';
 import Conversation from '../../models/Conversation.js';
 import Message from '../../models/Message.js';
@@ -293,6 +294,21 @@ export default class EmbedService {
             if (!chatbot) {
                 logger.warn('Chatbot not found', { botId, conversationId });
                 return { success: false, message: 'Chatbot no encontrado' };
+            }
+
+            // Bloqueo suave por suscripción vencida (trial expirado sin pago).
+            const ws = await Workspace.findById(chatbot.workspaceId).select('subscriptionStatus graceEndsAt');
+            if (ws && !isSubscriptionActive(ws)) {
+                return {
+                    success: true,
+                    message: 'Servicio en pausa',
+                    data: {
+                        botMessage: {
+                            content: 'Este asistente está temporalmente en pausa. Por favor, vuelve a intentarlo más tarde.',
+                            role: 'assistant',
+                        }
+                    }
+                };
             }
 
             if (!conversation) {
@@ -2251,7 +2267,7 @@ export default class EmbedService {
             const chatbot = await Chatbot.findById(botId).select('_id name widget embedKey');
             if (!chatbot) return { success: false, message: 'Chatbot no encontrado' };
             const apiUrl = process.env.API_URL || 'http://localhost:5001';
-            const embedCode = `<!-- Pielo Chat Widget -->\n<script src="${apiUrl}/widget.js" data-embed-key="${chatbot.embedKey}" async></script>\n<!-- End Pielo Chat Widget -->`;
+            const embedCode = `<!-- Øpia Chat Widget -->\n<script src="${apiUrl}/widget.js" data-embed-key="${chatbot.embedKey}" async></script>\n<!-- End Øpia Chat Widget -->`;
             return { success: true, data: { chatbotId: botId, chatbotName: chatbot.name, embedCode } };
         } catch (error) {
             return { success: false, message: error.message };

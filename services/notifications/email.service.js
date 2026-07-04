@@ -1,6 +1,6 @@
 import { Resend } from 'resend';
 
-const FROM = process.env.EMAIL_FROM || 'Pielo <noreply@pielo.app>';
+const FROM = process.env.EMAIL_FROM || 'Øpia <noreply@opia.app>';
 const ADMIN_EMAIL = process.env.ADMIN_ALERT_EMAIL || process.env.EMAIL_FROM;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
@@ -41,7 +41,7 @@ const wrap = (content) => `
       <table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.07);">
         <tr>
           <td style="background:#15140F;padding:24px 32px;">
-            <span style="font-size:20px;font-weight:700;color:#DCFF1E;letter-spacing:-0.5px;">Pielo</span>
+            <span style="font-size:20px;font-weight:700;color:#DCFF1E;letter-spacing:-0.5px;">Øpia</span>
           </td>
         </tr>
         <tr>
@@ -52,7 +52,7 @@ const wrap = (content) => `
         <tr>
           <td style="padding:16px 32px;background:#F9F8F5;border-top:1px solid #EEE;">
             <p style="margin:0;font-size:11px;color:#AAA;text-align:center;">
-              Pielo · Tu asistente que nunca duerme · <a href="${FRONTEND_URL}" style="color:#AAA;">pielo.app</a>
+              Øpia · Tu asistente que nunca duerme · <a href="${FRONTEND_URL}" style="color:#AAA;">opia.app</a>
             </p>
           </td>
         </tr>
@@ -80,10 +80,10 @@ class EmailService {
     const verifyUrl = `${FRONTEND_URL}/verificar-email?token=${token}`;
     return send({
       to: email,
-      subject: 'Verifica tu email · Pielo',
+      subject: 'Verifica tu email · Øpia',
       html: wrap(`
         ${h2('Verifica tu email')}
-        ${p(`Hola <strong>${name}</strong>, gracias por registrarte en Pielo.`)}
+        ${p(`Hola <strong>${name}</strong>, gracias por registrarte en Øpia.`)}
         ${p('Haz clic en el botón para activar tu cuenta. El link expira en 24 horas.')}
         ${btn('Verificar email', verifyUrl)}
         <p style="margin-top:24px;font-size:12px;color:#AAA;">
@@ -98,7 +98,7 @@ class EmailService {
     const dashboardUrl = `${FRONTEND_URL}/bots`;
     return send({
       to: email,
-      subject: '¡Bienvenido a Pielo! 🤖',
+      subject: '¡Bienvenido a Øpia! 🤖',
       html: wrap(`
         ${h2(`¡Hola ${name}, ya estás dentro!`)}
         ${p('Tu cuenta está lista. En 5 minutos puedes tener tu primer bot trabajando.')}
@@ -113,7 +113,7 @@ class EmailService {
     const resetUrl = `${FRONTEND_URL}/recuperar?token=${token}`;
     return send({
       to: email,
-      subject: 'Recupera tu contraseña · Pielo',
+      subject: 'Recupera tu contraseña · Øpia',
       html: wrap(`
         ${h2('Recuperar contraseña')}
         ${p(`Hola <strong>${name}</strong>, recibimos tu solicitud para resetear la contraseña.`)}
@@ -128,7 +128,7 @@ class EmailService {
     const roleLabels = { admin: 'Administrador', member: 'Operador', owner: 'Owner' };
     return send({
       to: email,
-      subject: `Te invitaron a ${workspaceName} · Pielo`,
+      subject: `Te invitaron a ${workspaceName} · Øpia`,
       html: wrap(`
         ${h2(`Invitación a <em>${workspaceName}</em>`)}
         ${p(`Tienes una invitación para unirte como <strong>${roleLabels[role] || role}</strong>.`)}
@@ -238,7 +238,7 @@ class EmailService {
   // 9. Notificación admin (errores, tickets de soporte)
   notifyAdmin = async (subject, html) => {
     if (!isConfigured() || !ADMIN_EMAIL) return { success: false, message: 'No configurado' };
-    return send({ to: ADMIN_EMAIL, subject: `[Pielo Admin] ${subject}`, html });
+    return send({ to: ADMIN_EMAIL, subject: `[Øpia Admin] ${subject}`, html });
   };
 
   // 10. Notificación de nuevo lead al dueño del workspace

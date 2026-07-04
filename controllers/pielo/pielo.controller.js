@@ -1,15 +1,15 @@
-import pieloAuthService from '../../services/pielo/pielo-auth.service.js';
-import pieloConciergeService from '../../services/pielo/pielo-concierge.service.js';
-import pieloOrderService from '../../services/pielo/pielo-order.service.js';
+import øpiaAuthService from '../../services/øpia/øpia-auth.service.js';
+import øpiaConciergeService from '../../services/øpia/øpia-concierge.service.js';
+import øpiaOrderService from '../../services/øpia/øpia-order.service.js';
 
 /**
- * Controller único del módulo Pielo (auth + concierge + pedidos).
+ * Controller único del módulo Øpia (auth + concierge + pedidos).
  */
-export default class PieloController {
+export default class ØpiaController {
   // ── Auth ──
   register = async (req, res) => {
     try {
-      const r = await pieloAuthService.register(req.body);
+      const r = await øpiaAuthService.register(req.body);
       return res.status(r.success ? 201 : 400).json(r);
     } catch (e) {
       return res.status(500).json({ success: false, message: 'Error al registrar' });
@@ -18,7 +18,7 @@ export default class PieloController {
 
   login = async (req, res) => {
     try {
-      const r = await pieloAuthService.login(req.body);
+      const r = await øpiaAuthService.login(req.body);
       return res.status(r.success ? 200 : 401).json(r);
     } catch (e) {
       return res.status(500).json({ success: false, message: 'Error al iniciar sesión' });
@@ -26,13 +26,13 @@ export default class PieloController {
   };
 
   me = async (req, res) => {
-    return res.status(200).json({ success: true, data: { user: req.pieloUser } });
+    return res.status(200).json({ success: true, data: { user: req.øpiaUser } });
   };
 
   // ── Concierge ──
   restaurants = async (req, res) => {
     try {
-      const data = await pieloConciergeService.getRestaurants();
+      const data = await øpiaConciergeService.getRestaurants();
       return res.status(200).json({ success: true, data: { restaurants: data } });
     } catch (e) {
       return res.status(500).json({ success: false, message: 'Error al listar restaurantes' });
@@ -41,7 +41,7 @@ export default class PieloController {
 
   discovery = async (req, res) => {
     try {
-      const data = await pieloConciergeService.getDiscovery();
+      const data = await øpiaConciergeService.getDiscovery();
       return res.status(200).json({ success: true, data });
     } catch (e) {
       return res.status(500).json({ success: false, message: 'Error al cargar destacados' });
@@ -50,7 +50,7 @@ export default class PieloController {
 
   restaurant = async (req, res) => {
     try {
-      const data = await pieloConciergeService.getRestaurant(req.params.id);
+      const data = await øpiaConciergeService.getRestaurant(req.params.id);
       if (!data) return res.status(404).json({ success: false, message: 'Local no disponible' });
       return res.status(200).json({ success: true, data });
     } catch (e) {
@@ -60,7 +60,7 @@ export default class PieloController {
 
   product = async (req, res) => {
     try {
-      const data = await pieloConciergeService.getProduct(req.params.id);
+      const data = await øpiaConciergeService.getProduct(req.params.id);
       if (!data) return res.status(404).json({ success: false, message: 'Producto no disponible' });
       return res.status(200).json({ success: true, data });
     } catch (e) {
@@ -70,7 +70,7 @@ export default class PieloController {
 
   chat = async (req, res) => {
     try {
-      const r = await pieloConciergeService.chat(req.body?.message);
+      const r = await øpiaConciergeService.chat(req.body?.message);
       return res.status(200).json(r);
     } catch (e) {
       return res.status(500).json({ success: false, message: 'Error en el concierge' });
@@ -80,7 +80,7 @@ export default class PieloController {
   // ── Pedidos ──
   createOrder = async (req, res) => {
     try {
-      const r = await pieloOrderService.create(req.pieloUser, req.body);
+      const r = await øpiaOrderService.create(req.øpiaUser, req.body);
       return res.status(r.success ? 201 : 400).json(r);
     } catch (e) {
       return res.status(500).json({ success: false, message: 'Error al crear pedido' });
@@ -89,7 +89,7 @@ export default class PieloController {
 
   activeOrder = async (req, res) => {
     try {
-      const r = await pieloOrderService.getActive(req.pieloUser._id);
+      const r = await øpiaOrderService.getActive(req.øpiaUser._id);
       return res.status(200).json(r);
     } catch (e) {
       return res.status(500).json({ success: false, message: 'Error al obtener pedido' });
@@ -98,7 +98,7 @@ export default class PieloController {
 
   orderHistory = async (req, res) => {
     try {
-      const r = await pieloOrderService.getHistory(req.pieloUser._id);
+      const r = await øpiaOrderService.getHistory(req.øpiaUser._id);
       return res.status(200).json(r);
     } catch (e) {
       return res.status(500).json({ success: false, message: 'Error al obtener historial' });

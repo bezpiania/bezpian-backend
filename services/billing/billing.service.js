@@ -2,6 +2,7 @@ import { Subscription, Payment, Workspace, WorkspaceMember } from '../../models/
 import Chatbot from '../../models/Chatbot.js';
 import Conversation from '../../models/Conversation.js';
 import { getPlanLimits, PLAN_KEYS, normalizePlan } from '../../config/plans.js';
+import { getSubscriptionInfo } from '../../config/subscription.js';
 
 const PLANS = [
     {
@@ -33,7 +34,7 @@ const PLANS = [
 export default class BillingService {
     getUsage = async (workspaceId) => {
         try {
-            const workspace = await Workspace.findById(workspaceId).select('plan name');
+            const workspace = await Workspace.findById(workspaceId).select('plan name subscriptionStatus graceEndsAt');
             if (!workspace) return { success: false, message: 'Workspace no encontrado' };
 
             const now = new Date();
@@ -56,6 +57,7 @@ export default class BillingService {
                     workspaceName: workspace.name,
                     usage: { conversations, chatbots, members },
                     limits,
+                    subscription: getSubscriptionInfo(workspace),
                     periodStart: monthStart,
                     periodEnd:   monthEnd,
                 },

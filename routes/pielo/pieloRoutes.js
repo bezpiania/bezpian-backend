@@ -1,10 +1,10 @@
 import express from 'express';
-import PieloController from '../../controllers/pielo/pielo.controller.js';
-import { pieloAuthMiddleware } from '../../middlewares/pielo/pieloAuth.middleware.js';
+import ØpiaController from '../../controllers/øpia/øpia.controller.js';
+import { øpiaAuthMiddleware } from '../../middlewares/øpia/øpiaAuth.middleware.js';
 import rateLimiter from '../../middlewares/rateLimit.middleware.js';
 
 const router = express.Router();
-const ctrl = new PieloController();
+const ctrl = new ØpiaController();
 
 // ── Públicas ──
 router.post('/auth/register', rateLimiter.middleware, ctrl.register);
@@ -16,9 +16,9 @@ router.get('/products/:id',    rateLimiter.middleware, ctrl.product);
 router.post('/chat',          rateLimiter.middleware, ctrl.chat);
 
 // ── Protegidas (consumidor autenticado) ──
-router.get('/me',             pieloAuthMiddleware, ctrl.me);
-router.post('/orders',        pieloAuthMiddleware, ctrl.createOrder);
-router.get('/orders/active',  pieloAuthMiddleware, ctrl.activeOrder);
-router.get('/orders/history', pieloAuthMiddleware, ctrl.orderHistory);
+router.get('/me',             øpiaAuthMiddleware, ctrl.me);
+router.post('/orders',        øpiaAuthMiddleware, ctrl.createOrder);
+router.get('/orders/active',  øpiaAuthMiddleware, ctrl.activeOrder);
+router.get('/orders/history', øpiaAuthMiddleware, ctrl.orderHistory);
 
 export default router;

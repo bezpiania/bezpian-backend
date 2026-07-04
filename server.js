@@ -33,11 +33,14 @@ import AdminRoutes from './routes/admin/adminRoutes.js';
 import QuoteRoutes from './routes/quotes/quoteRoutes.js';
 import BillingRoutes from './routes/billing/billingRoutes.js';
 import EmbedRoutes from './routes/embed/embedRoutes.js';
-import PieloRoutes from './routes/pielo/pieloRoutes.js';
+import ØpiaRoutes from './routes/øpia/øpiaRoutes.js';
 import WebhookRoutes from './routes/webhooks/webhookRoutes.js';
 import SocialRoutes from './routes/messaging/socialRoutes.js';
 import CalendarRoutes from './routes/calendar/calendarRoutes.js';
 import UploadRoutes from './routes/uploads/uploadRoutes.js';
+import BillingController from './controllers/billing/billing.controller.js';
+
+const billingController = new BillingController();
 
 connectMongoDB();
 
@@ -68,7 +71,7 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').filter(o =
 // Public embed endpoints — allow any origin (including file:// = null origin)
 const publicCors = cors({ origin: '*', credentials: false });
 app.use('/api/embed', publicCors);
-app.use('/api/pielo', publicCors); // marketplace Pielo (app móvil, cualquier origen)
+app.use('/api/øpia', publicCors); // marketplace Øpia (app móvil, cualquier origen)
 
 // Admin/private endpoints — restricted origins
 app.use(cors({
@@ -91,6 +94,10 @@ app.use(fileUpload({
     responseOnLimit: 'El archivo supera el límite de 25 MB.',
 }));
 
+// Webhook de Lemon Squeezy: requiere el body CRUDO para verificar la firma HMAC,
+// por eso va ANTES de express.json y con express.raw.
+app.post('/api/webhooks/lemonsqueezy', express.raw({ type: '*/*' }), (req, res) => billingController.lemonWebhook(req, res));
+
 app.use(express.json());
 
 // Neutraliza operadores de inyección NoSQL ($, .) en body/query/params.
@@ -102,7 +109,7 @@ app.use('/chat', express.static(path.join(__dirname, 'public')));
 // Public routes (sin autenticación)
 app.use('/api/auth', AuthRoutes);
 app.use('/api/embed', EmbedRoutes);
-app.use('/api/pielo', PieloRoutes); // módulo Pielo (marketplace) — quitar esta línea para removerlo
+app.use('/api/øpia', ØpiaRoutes); // módulo Øpia (marketplace) — quitar esta línea para removerlo
 app.use('/api/webhooks', WebhookRoutes);
 app.use('/api/messaging', SocialRoutes);
 app.use('/api/calendar', CalendarRoutes);

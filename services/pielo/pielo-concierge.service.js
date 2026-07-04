@@ -4,18 +4,18 @@ import AdvancedRAGService from '../rag/advanced-rag.service.js';
 const advancedRag = new AdvancedRAGService();
 
 /**
- * Concierge de Pielo — asistente ÚNICO de marketplace.
- * NO es el bot de una tienda: busca entre TODAS las tiendas con pieloEnabled
+ * Concierge de Øpia — asistente ÚNICO de marketplace.
+ * NO es el bot de una tienda: busca entre TODAS las tiendas con øpiaEnabled
  * y recomienda. Reutiliza el motor RAG por tienda (con la key de cada tienda
  * para su propio catálogo), sin necesitar una key de plataforma.
  */
-class PieloConciergeService {
+class ØpiaConciergeService {
   /**
    * Vitrina de descubrimiento: productos destacados (con foto) de las tiendas
-   * Pielo + chips de antojos. Es el estado inicial del chat (impulso visual).
+   * Øpia + chips de antojos. Es el estado inicial del chat (impulso visual).
    */
   getDiscovery = async () => {
-    const bots = await Chatbot.find({ pieloEnabled: true, status: 'active', businessType: 'restaurant' })
+    const bots = await Chatbot.find({ øpiaEnabled: true, status: 'active', businessType: 'restaurant' })
       .select('name businessType widget');
 
     const featured = [];
@@ -45,7 +45,7 @@ class PieloConciergeService {
 
   /** Detalle de un local + sus productos (para la pantalla del restaurante). */
   getRestaurant = async (id) => {
-    const bot = await Chatbot.findOne({ _id: id, pieloEnabled: true, status: 'active', businessType: 'restaurant' })
+    const bot = await Chatbot.findOne({ _id: id, øpiaEnabled: true, status: 'active', businessType: 'restaurant' })
       .select('name businessType widget personality.welcomeMessage');
     if (!bot) return null;
     const Product = (await import('../../models/Product.js')).default;
@@ -73,7 +73,7 @@ class PieloConciergeService {
     const Product = (await import('../../models/Product.js')).default;
     const p = await Product.findById(id).select('name description price imageUrl category chatbotId').lean();
     if (!p) return null;
-    const bot = await Chatbot.findOne({ _id: p.chatbotId, pieloEnabled: true, status: 'active', businessType: 'restaurant' })
+    const bot = await Chatbot.findOne({ _id: p.chatbotId, øpiaEnabled: true, status: 'active', businessType: 'restaurant' })
       .select('name widget');
     if (!bot) return null;
     return {
@@ -84,7 +84,7 @@ class PieloConciergeService {
 
   /** Tiendas activas en el marketplace. */
   getRestaurants = async () => {
-    const bots = await Chatbot.find({ pieloEnabled: true, status: 'active', businessType: 'restaurant' })
+    const bots = await Chatbot.find({ øpiaEnabled: true, status: 'active', businessType: 'restaurant' })
       .select('name businessType widget personality.welcomeMessage');
     return bots.map((b) => ({
       id: b._id,
@@ -96,11 +96,11 @@ class PieloConciergeService {
   };
 
   /**
-   * Busca un antojo entre todas las tiendas Pielo.
+   * Busca un antojo entre todas las tiendas Øpia.
    * Devuelve resultados agrupados por tienda (solo las que tienen match).
    */
   search = async (query, perStoreLimit = 4) => {
-    const bots = await Chatbot.find({ pieloEnabled: true, status: 'active', businessType: 'restaurant' });
+    const bots = await Chatbot.find({ øpiaEnabled: true, status: 'active', businessType: 'restaurant' });
     const results = [];
     for (const bot of bots) {
       try {
@@ -167,4 +167,4 @@ class PieloConciergeService {
   };
 }
 
-export default new PieloConciergeService();
+export default new ØpiaConciergeService();

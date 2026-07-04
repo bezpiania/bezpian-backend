@@ -1,11 +1,11 @@
 import mongoose from 'mongoose';
 
 /**
- * PieloOrder — pedido del marketplace Pielo.
- * Referencia los tres actores: consumidor (pieloUserId), tienda (chatbotId)
+ * ØpiaOrder — pedido del marketplace Øpia.
+ * Referencia los tres actores: consumidor (øpiaUserId), tienda (chatbotId)
  * y repartidor (riderId, fase posterior). La tienda son los Chatbot existentes.
  */
-const pieloOrderItemSchema = new mongoose.Schema({
+const øpiaOrderItemSchema = new mongoose.Schema({
   productId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
   name:       { type: String, required: true },
   quantity:   { type: Number, required: true, min: 1 },
@@ -15,16 +15,16 @@ const pieloOrderItemSchema = new mongoose.Schema({
   variant:    { type: String, default: '' },
 }, { _id: false });
 
-const pieloOrderSchema = new mongoose.Schema({
+const øpiaOrderSchema = new mongoose.Schema({
   orderNumber:     { type: Number },
 
-  pieloUserId:     { type: mongoose.Schema.Types.ObjectId, ref: 'PieloUser', required: true },
+  øpiaUserId:     { type: mongoose.Schema.Types.ObjectId, ref: 'ØpiaUser', required: true },
   chatbotId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Chatbot', required: true },  // la tienda
   workspaceId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Workspace' },                 // dueño de la tienda
-  riderId:         { type: mongoose.Schema.Types.ObjectId, ref: 'PieloRider', default: null },  // repartidor (futuro)
+  riderId:         { type: mongoose.Schema.Types.ObjectId, ref: 'ØpiaRider', default: null },  // repartidor (futuro)
   orderId:         { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null },        // pedido espejo en el dashboard del restaurante
 
-  items:           { type: [pieloOrderItemSchema], default: [] },
+  items:           { type: [øpiaOrderItemSchema], default: [] },
   subtotal:        { type: Number, required: true },
   deliveryCost:    { type: Number, default: 0 },
   total:           { type: Number, required: true },
@@ -44,14 +44,14 @@ const pieloOrderSchema = new mongoose.Schema({
 });
 
 // Número de pedido autoincremental global del marketplace
-pieloOrderSchema.pre('save', async function () {
+øpiaOrderSchema.pre('save', async function () {
   if (this.isNew) {
     const last = await this.constructor.findOne().sort({ orderNumber: -1 }).select('orderNumber');
     this.orderNumber = (last?.orderNumber || 0) + 1;
   }
 });
 
-pieloOrderSchema.index({ pieloUserId: 1, createdAt: -1 });
-pieloOrderSchema.index({ chatbotId: 1, status: 1 });
+øpiaOrderSchema.index({ øpiaUserId: 1, createdAt: -1 });
+øpiaOrderSchema.index({ chatbotId: 1, status: 1 });
 
-export default mongoose.model('PieloOrder', pieloOrderSchema);
+export default mongoose.model('ØpiaOrder', øpiaOrderSchema);
