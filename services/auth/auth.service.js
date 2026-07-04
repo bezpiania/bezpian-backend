@@ -5,12 +5,16 @@ import { User, RefreshToken, Workspace, WorkspaceMember } from '../../models/ind
 import emailService from '../notifications/email.service.js';
 
 export default class AuthService {
-  signup = async (email, password, name) => {
+  signup = async (email, password, name, plan = 'basico') => {
     try {
       const existingUser = await User.findOne({ email: email.toLowerCase() });
       if (existingUser) {
         return { success: false, message: 'El email ya está registrado' };
       }
+
+      // Plan elegido al registrarse. Trial de 7 días (pago después, sin tarjeta).
+      const chosenPlan = ['basico', 'pro', 'enterprise'].includes(plan) ? plan : 'basico';
+      const graceEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
       const passwordHash = await bcrypt.hash(password, 10);
       const emailVerificationToken = crypto.randomBytes(32).toString('hex');
@@ -31,7 +35,9 @@ export default class AuthService {
         ownerId: user._id,
         name: `${name}'s Workspace`,
         slug,
-        plan: 'free'
+        plan: chosenPlan,
+        subscriptionStatus: 'trialing',
+        graceEndsAt,
       });
 
       await workspace.save();

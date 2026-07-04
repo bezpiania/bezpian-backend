@@ -10,6 +10,16 @@ const workspaceSchema = new mongoose.Schema({
   brandColor: String,
   plan: { type: String, enum: ['free', 'basico', 'pro', 'enterprise'], default: 'free' },
   subscriptionId: mongoose.Schema.Types.ObjectId,
+
+  // Estado de suscripción / trial (pago después, 7 días de gracia).
+  subscriptionStatus: { type: String, enum: ['trialing', 'active', 'past_due', 'canceled'], default: 'trialing' },
+  graceEndsAt: { type: Date, default: null },       // fin del período de gracia (trial)
+  lemonSqueezy: {                                   // datos cuando el cliente paga
+    customerId:     { type: String, default: null },
+    subscriptionId: { type: String, default: null },
+    renewsAt:       { type: Date, default: null },
+  },
+
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });

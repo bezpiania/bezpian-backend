@@ -6,7 +6,7 @@ const authService = new AuthService();
 export default class AuthController {
     signup = async (req, res) => {
         try {
-            const { email, password, name } = req.body;
+            const { email, password, name, plan } = req.body;
 
             const missing = validateRequired(['email', 'password', 'name'], { email, password, name });
             if (missing) {
@@ -30,7 +30,7 @@ export default class AuthController {
                 });
             }
 
-            const response = await authService.signup(email, password, name);
+            const response = await authService.signup(email, password, name, plan);
             return res.status(response.success ? 201 : 400).json(response);
         } catch (error) {
             console.error('❌ AuthController.signup:', error);
