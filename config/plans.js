@@ -10,33 +10,46 @@
  * -1 = ilimitado
  */
 export const PLAN_CONFIG = {
+    // 'free' se mantiene SOLO como fallback interno (default de código). No se ofrece.
     free: {
         label:         'Free',
         conversations: 10,
         chatbots:      1,
         members:       2,
         price:         0,
+        offered:       false,
+        manager:       false,
     },
     basico: {
         label:         'Básico',
-        conversations: 200,
+        conversations: 100,
         chatbots:      1,
         members:       3,
         price:         50000,
+        offered:       true,
+        manager:       false,   // acceso simple: entra directo a su único bot
     },
     pro: {
         label:         'Pro',
-        conversations: 1000,
-        chatbots:      3,
-        members:       10,
-        price:         150000,
+        conversations: 500,
+        chatbots:      1,
+        members:       5,
+        price:         85000,
+        offered:       true,
+        manager:       false,
     },
     enterprise: {
         label:         'Empresa',
-        conversations: -1,
-        chatbots:      -1,
+        // Empresa = plan multi-bot (rol "manager" / agencia). Precio por bot.
+        conversationsPerBot: 200,
+        conversations: 1000,    // pool de referencia (200 × 5) para los límites actuales
+        chatbots:      5,
+        minChatbots:   2,
         members:       -1,
-        price:         -1,   // -1 = precio a medida
+        pricePerBot:   30000,
+        price:         -1,      // -1 = se calcula por bot (30.000 × nº de bots)
+        offered:       true,
+        manager:       true,    // acceso manager: ve la lista y marca el panel de cada cliente
     },
 };
 

@@ -147,7 +147,7 @@ export default class AuthService {
       await User.updateOne({ _id: user._id }, { lastLoginAt: new Date() });
 
       // Get user's role — owner of workspace always gets owner role
-      const workspace = await Workspace.findById(defaultWorkspaceId).select('ownerId');
+      const workspace = await Workspace.findById(defaultWorkspaceId).select('ownerId plan');
       const isOwner = workspace?.ownerId?.toString() === user._id.toString();
       const membership = await WorkspaceMember.findOne({ workspaceId: defaultWorkspaceId, userId: user._id });
       const workspaceRole = isOwner ? 'owner' : (membership?.role || 'member');
@@ -165,6 +165,7 @@ export default class AuthService {
             avatar: user.avatar,
             defaultWorkspaceId,
             workspaceRole,
+            workspacePlan: workspace?.plan || 'free',
           }
         }
       };
