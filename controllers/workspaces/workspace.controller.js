@@ -118,9 +118,9 @@ export default class WorkspaceController {
         try {
             const { userId } = req.user;
             const { id } = req.params;
-            const { name, email, password, role } = req.body;
+            const { name, email, password, role, scopedChatbotId } = req.body;
             if (!email || !password) return res.status(400).json({ success: false, message: 'Email y contraseña son requeridos' });
-            const response = await workspaceService.createMember(id, userId, { name, email, password, role });
+            const response = await workspaceService.createMember(id, userId, { name, email, password, role, scopedChatbotId: scopedChatbotId || null });
             return res.status(response.success ? 201 : 400).json(response);
         } catch (error) {
             console.error('❌ WorkspaceController.createMember:', error);

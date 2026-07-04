@@ -166,6 +166,7 @@ export default class AuthService {
             defaultWorkspaceId,
             workspaceRole,
             workspacePlan: workspace?.plan || 'free',
+            scopedChatbotId: membership?.scopedChatbotId ? membership.scopedChatbotId.toString() : null,
           }
         }
       };

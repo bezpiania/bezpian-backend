@@ -149,7 +149,7 @@ export default class WorkspaceService {
         }
     };
 
-    createMember = async (workspaceId, invitedByUserId, { name, email, password, role = 'member' }) => {
+    createMember = async (workspaceId, invitedByUserId, { name, email, password, role = 'member', scopedChatbotId = null }) => {
         try {
             const normalizedEmail = email.toLowerCase().trim();
             let user = await User.findOne({ email: normalizedEmail });
@@ -161,9 +161,9 @@ export default class WorkspaceService {
                     return { success: false, message: 'Este usuario ya es miembro del workspace' };
                 }
                 if (existing) {
-                    await WorkspaceMember.findByIdAndUpdate(existing._id, { role, status: 'active', joinedAt: new Date() });
+                    await WorkspaceMember.findByIdAndUpdate(existing._id, { role, scopedChatbotId, status: 'active', joinedAt: new Date() });
                 } else {
-                    await WorkspaceMember.create({ workspaceId, userId: user._id, role, status: 'active', invitedBy: invitedByUserId, joinedAt: new Date() });
+                    await WorkspaceMember.create({ workspaceId, userId: user._id, role, scopedChatbotId, status: 'active', invitedBy: invitedByUserId, joinedAt: new Date() });
                 }
                 return { success: true, message: `${user.name} añadido al workspace` };
             }
@@ -182,6 +182,7 @@ export default class WorkspaceService {
                 workspaceId,
                 userId: user._id,
                 role,
+                scopedChatbotId,
                 status: 'active',
                 invitedBy: invitedByUserId,
                 joinedAt: new Date(),
@@ -198,7 +199,7 @@ export default class WorkspaceService {
         try {
             const email = inviteeEmail.toLowerCase().trim();
 
-            // If user already exists in Pielo, add directly
+            // If user already exists in Øpia, add directly
             const user = await User.findOne({ email });
             if (user) {
                 const existing = await WorkspaceMember.findOne({ workspaceId, userId: user._id });
@@ -228,7 +229,7 @@ export default class WorkspaceService {
             const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
             const inviteUrl = `${frontendUrl}/invitar?token=${token}`;
             const emailService = (await import('../notifications/email.service.js')).default;
-            await emailService.sendInvitation({ email, workspaceName: workspace?.name || 'Pielo', role, inviteUrl });
+            await emailService.sendInvitation({ email, workspaceName: workspace?.name || 'Øpia', role, inviteUrl });
 
             return { success: true, message: `Invitación enviada a ${email}` };
         } catch (error) {
