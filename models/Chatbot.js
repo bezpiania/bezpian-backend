@@ -8,9 +8,9 @@ const chatbotSchema = new mongoose.Schema({
   status:       { type: String, enum: ['draft', 'active', 'paused'], default: 'draft' },
   businessType: { type: String, enum: ['restaurant', 'store', 'clinic', 'generic'], default: 'generic' },
 
-  // Módulo Pielo (marketplace): el negocio acepta aparecer en Pielo. Único punto de
-  // contacto Pielo↔Pielo. Opcional; si Pielo se quita, este campo simplemente no se lee.
-  pieloEnabled: { type: Boolean, default: false },
+  // Módulo Øpia (marketplace): el negocio acepta aparecer en Øpia. Único punto de
+  // contacto Øpia↔Øpia. Opcional; si Øpia se quita, este campo simplemente no se lee.
+  øpiaEnabled: { type: Boolean, default: false },
 
   personality: {
     tone: String,
@@ -30,6 +30,15 @@ const chatbotSchema = new mongoose.Schema({
     pattern: { type: String, default: 'dots' },
     patternOpacity: { type: Number, default: 0.45 },
     suggestions: [{ icon: String, text: String }],
+  },
+
+  // Marca blanca del DASHBOARD del cliente (solo la configura el plan manager/Empresa).
+  // Si está vacío, el panel usa la marca Øpia por defecto.
+  dashboardBrand: {
+    enabled: { type: Boolean, default: false },
+    name:    { type: String, default: '' },   // nombre a mostrar en el panel
+    color:   { type: String, default: '' },   // color de acento del panel (hex)
+    logo:    { type: String, default: '' },   // URL del logo (Cloudinary)
   },
 
   features: {
