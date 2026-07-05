@@ -40,14 +40,12 @@ export const PLAN_CONFIG = {
     },
     enterprise: {
         label:         'Empresa',
-        // Empresa = plan multi-bot (rol "manager" / agencia). Precio por bot.
+        // Empresa = plan multi-bot (rol "manager" / agencia). Tarifa plana, hasta 4 bots.
         conversationsPerBot: 200,
-        conversations: 1000,    // pool de referencia (200 × 5) para los límites actuales
-        chatbots:      5,
-        minChatbots:   2,
+        conversations: 800,     // pool de referencia (200 × 4)
+        chatbots:      4,
         members:       -1,
-        pricePerBot:   30000,
-        price:         -1,      // -1 = se calcula por bot (30.000 × nº de bots)
+        price:         60000,   // tarifa plana mensual (hasta 4 bots)
         offered:       true,
         manager:       true,    // acceso manager: ve la lista y marca el panel de cada cliente
     },
