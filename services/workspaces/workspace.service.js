@@ -165,6 +165,8 @@ export default class WorkspaceService {
                 } else {
                     await WorkspaceMember.create({ workspaceId, userId: user._id, role, scopedChatbotId, status: 'active', invitedBy: invitedByUserId, joinedAt: new Date() });
                 }
+                // Cliente: su workspace por defecto es este (entra directo a su bot).
+                if (role === 'client') { user.defaultWorkspaceId = workspaceId; await user.save(); }
                 return { success: true, message: `${user.name} añadido al workspace` };
             }
 
@@ -176,6 +178,9 @@ export default class WorkspaceService {
                 passwordHash,
                 name: name || normalizedEmail.split('@')[0],
                 emailVerified: true, // admin-created accounts skip verification
+                // Fija el workspace del que se le da acceso (evita que el login le cree
+                // uno nuevo vacío y lo trate como owner). Clave para el rol 'client'.
+                defaultWorkspaceId: workspaceId,
             });
 
             await WorkspaceMember.create({
