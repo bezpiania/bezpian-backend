@@ -1,26 +1,26 @@
 import mongoose from 'mongoose';
 
 /**
- * ØpiaUser — consumidor del marketplace Øpia.
- * Auth independiente de los usuarios de Øpia (dueños de negocio).
- * El hashing de password se hace en øpia-auth.service (como en User.js).
+ * PieloUser — consumidor del marketplace Pielo.
+ * Auth independiente de los usuarios de Pielo (dueños de negocio).
+ * El hashing de password se hace en pielo-auth.service (como en User.js).
  */
-const øpiaAddressSchema = new mongoose.Schema({
+const pieloAddressSchema = new mongoose.Schema({
   label:   { type: String, default: 'Casa' },
   address: { type: String, required: true },
   notes:   { type: String, default: '' },
 }, { _id: true });
 
-const øpiaUserSchema = new mongoose.Schema({
+const pieloUserSchema = new mongoose.Schema({
   name:         { type: String, required: true },
   email:        { type: String, required: true, unique: true, lowercase: true, trim: true },
   passwordHash: { type: String, default: null },
   phone:        { type: String, default: '' },
-  addresses:    { type: [øpiaAddressSchema], default: [] },
+  addresses:    { type: [pieloAddressSchema], default: [] },
   lastLoginAt:  { type: Date, default: null },
   createdAt:    { type: Date, default: Date.now },
 });
 
-øpiaUserSchema.index({ email: 1 });
+pieloUserSchema.index({ email: 1 });
 
-export default mongoose.model('ØpiaUser', øpiaUserSchema);
+export default mongoose.model('PieloUser', pieloUserSchema);

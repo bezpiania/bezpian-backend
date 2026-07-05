@@ -1,5 +1,5 @@
 /**
- * WooCommerce → Øpia Product Sync Service
+ * WooCommerce → Pielo Product Sync Service
  * Fetches all products from a WooCommerce store and upserts them into the Product collection.
  * Uses Basic Auth (Consumer Key / Consumer Secret) over HTTPS.
  */
@@ -83,7 +83,7 @@ async function fetchAllWooProducts(storeUrl, consumerKey, consumerSecret) {
   return allProducts;
 }
 
-// ── Map WooCommerce product → Øpia Product ────────────────────────────────
+// ── Map WooCommerce product → Pielo Product ────────────────────────────────
 function mapProduct(wc, chatbotId, workspaceId) {
   const { category, subcategory } = mapCategories(wc.categories || []);
   const brand = extractBrand(wc.attributes || []);

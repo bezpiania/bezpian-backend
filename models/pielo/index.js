@@ -1,8 +1,8 @@
 /**
- * Índice de modelos del módulo Øpia.
- * Aislado del models/index.js de Øpia (que NO se toca).
+ * Índice de modelos del módulo Pielo.
+ * Aislado del models/index.js de Pielo (que NO se toca).
  */
-import ØpiaUser from './ØpiaUser.js';
-import ØpiaOrder from './ØpiaOrder.js';
+import PieloUser from './PieloUser.js';
+import PieloOrder from './PieloOrder.js';
 
-export { ØpiaUser, ØpiaOrder };
+export { PieloUser, PieloOrder };

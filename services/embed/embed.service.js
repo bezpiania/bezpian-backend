@@ -2267,7 +2267,7 @@ export default class EmbedService {
             const chatbot = await Chatbot.findById(botId).select('_id name widget embedKey');
             if (!chatbot) return { success: false, message: 'Chatbot no encontrado' };
             const apiUrl = process.env.API_URL || 'http://localhost:5001';
-            const embedCode = `<!-- Øpia Chat Widget -->\n<script src="${apiUrl}/widget.js" data-embed-key="${chatbot.embedKey}" async></script>\n<!-- End Øpia Chat Widget -->`;
+            const embedCode = `<!-- Pielo Chat Widget -->\n<script src="${apiUrl}/widget.js" data-embed-key="${chatbot.embedKey}" async></script>\n<!-- End Pielo Chat Widget -->`;
             return { success: true, data: { chatbotId: botId, chatbotName: chatbot.name, embedCode } };
         } catch (error) {
             return { success: false, message: error.message };

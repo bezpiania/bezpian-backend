@@ -1,12 +1,12 @@
 import jwt from 'jsonwebtoken';
-import { ØpiaUser } from '../../models/øpia/index.js';
+import { PieloUser } from '../../models/pielo/index.js';
 
 /**
- * Auth de consumidores Øpia. Verifica el JWT (mismo JWT_SECRET) pero exige
- * un token de Øpia (payload con øpiaUserId) y carga el ØpiaUser.
- * Un token de Øpia no resuelve aquí → aislamiento entre dominios.
+ * Auth de consumidores Pielo. Verifica el JWT (mismo JWT_SECRET) pero exige
+ * un token de Pielo (payload con pieloUserId) y carga el PieloUser.
+ * Un token de Pielo no resuelve aquí → aislamiento entre dominios.
  */
-export const øpiaAuthMiddleware = async (req, res, next) => {
+export const pieloAuthMiddleware = async (req, res, next) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) {
@@ -14,16 +14,16 @@ export const øpiaAuthMiddleware = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    if (!decoded?.øpiaUserId) {
-      return res.status(401).json({ success: false, message: 'Token no válido para Øpia' });
+    if (!decoded?.pieloUserId) {
+      return res.status(401).json({ success: false, message: 'Token no válido para Pielo' });
     }
 
-    const user = await ØpiaUser.findById(decoded.øpiaUserId).select('-passwordHash');
+    const user = await PieloUser.findById(decoded.pieloUserId).select('-passwordHash');
     if (!user) {
       return res.status(401).json({ success: false, message: 'Usuario no encontrado' });
     }
 
-    req.øpiaUser = user;
+    req.pieloUser = user;
     next();
   } catch (error) {
     return res.status(401).json({ success: false, message: 'Token inválido o expirado' });

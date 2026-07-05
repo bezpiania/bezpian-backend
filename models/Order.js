@@ -64,10 +64,10 @@ const orderSchema = new mongoose.Schema({
     default: 'new',
   },
 
-  // Origen del pedido. 'widget' (chat/widget del negocio) o 'øpia' (marketplace).
+  // Origen del pedido. 'widget' (chat/widget del negocio) o 'pielo' (marketplace).
   source:      { type: String, default: 'widget' },
-  // Enlace al pedido del marketplace Øpia (opcional). Solo lo setea el módulo Øpia.
-  øpiaOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'ØpiaOrder', default: null },
+  // Enlace al pedido del marketplace Pielo (opcional). Solo lo setea el módulo Pielo.
+  pieloOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'PieloOrder', default: null },
 }, { timestamps: true });
 
 orderSchema.index({ workspaceId: 1, createdAt: -1 });
