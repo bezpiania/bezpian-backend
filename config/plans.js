@@ -44,6 +44,7 @@ export const PLAN_CONFIG = {
         conversationsPerBot: 200,
         conversations: 800,     // pool de referencia (200 × 4)
         chatbots:      4,
+        extraBotPrice: 15000,   // bot adicional del 5º en adelante (negociado por ventas)
         members:       -1,
         price:         60000,   // tarifa plana mensual (hasta 4 bots)
         offered:       true,
